@@ -234,21 +234,7 @@ async function analyzeSegment(startKm) {
   );
 
   try {
-    const data = new FormData();
-    data.append("file", await uploadableGpxFile(currentFile), "route.gpx");
-    data.append("radiusKm", radiusInput.value);
-    data.append("stageKm", stageInput.value);
-    data.append("startKm", startKm);
-
-    const response = await fetch(apiUrl("/api/analyze"), {
-      method: "POST",
-      body: data,
-    });
-
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(localizeServerError(payload.detail) || t("analyzeFailed"));
-    }
+    const payload = await requestAnalysis(startKm);
 
     renderRoute(payload.route);
     places = payload.places;
@@ -265,6 +251,57 @@ async function analyzeSegment(startKm) {
     submitButton.disabled = false;
     nextSegmentButton.disabled = false;
   }
+}
+
+async function requestAnalysis(startKm) {
+  try {
+    return await requestMultipartAnalysis(startKm);
+  } catch (error) {
+    if (!isBrowserPatternError(error)) {
+      throw error;
+    }
+    return requestJsonAnalysis(startKm);
+  }
+}
+
+async function requestMultipartAnalysis(startKm) {
+  const data = new FormData();
+  data.append("file", currentFile, safeGpxFilename(currentFile));
+  data.append("radiusKm", radiusInput.value);
+  data.append("stageKm", stageInput.value);
+  data.append("startKm", startKm);
+
+  const response = await fetch("/api/analyze", {
+    method: "POST",
+    body: data,
+  });
+
+  return responsePayload(response);
+}
+
+async function requestJsonAnalysis(startKm) {
+  const response = await fetch("/api/analyze-json", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      gpxText: await readFileText(currentFile),
+      radiusKm: Number(radiusInput.value),
+      stageKm: Number(stageInput.value),
+      startKm,
+    }),
+  });
+
+  return responsePayload(response);
+}
+
+async function responsePayload(response) {
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(localizeServerError(payload.detail) || t("analyzeFailed"));
+  }
+  return payload;
 }
 
 function renderRoute(route) {
@@ -596,13 +633,19 @@ function formatDistance(meters) {
   return `${(meters / 1000).toFixed(1)} km`;
 }
 
-async function uploadableGpxFile(file) {
-  const content = await file.arrayBuffer();
-  return new Blob([content], { type: "application/gpx+xml" });
+function safeGpxFilename(file) {
+  const name = file && file.name ? file.name : "route.gpx";
+  const safeName = name.replace(/[^A-Za-z0-9._-]/g, "_");
+  return safeName.toLowerCase().endsWith(".gpx") ? safeName : "route.gpx";
 }
 
-function apiUrl(path) {
-  return `${window.location.origin}${path}`;
+function readFileText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result || "")));
+    reader.addEventListener("error", () => reject(reader.error || new Error(t("analyzeFailed"))));
+    reader.readAsText(file);
+  });
 }
 
 function placeCountLabel(count) {
@@ -658,12 +701,17 @@ function localizeServerError(message) {
 
 function userFacingError(error) {
   const message = String(error && error.message ? error.message : error || "");
-  if (message.includes("string did not match the expected pattern")) {
+  if (isBrowserPatternError(error)) {
     return currentLanguage === "sv"
-      ? "Webbläsaren stoppade begäran. Ladda om sidan och välj GPX-filen igen."
-      : "The browser blocked the request. Reload the page and choose the GPX file again.";
+      ? "Webbläsaren blockerade uppladdningen. Prova att flytta GPX-filen till Filer/Hämtade filer och välj den igen."
+      : "The browser blocked the upload. Try moving the GPX file to Files/Downloads and choose it again.";
   }
   return message || t("analyzeFailed");
+}
+
+function isBrowserPatternError(error) {
+  const message = String(error && error.message ? error.message : error || "");
+  return message.includes("string did not match the expected pattern");
 }
 
 function capitalize(value) {

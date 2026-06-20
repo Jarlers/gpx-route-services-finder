@@ -10,6 +10,7 @@ from typing import Any
 import gpxpy
 import httpx
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from pydantic import BaseModel
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -41,6 +42,13 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 
+class AnalyzeJsonRequest(BaseModel):
+    gpxText: str
+    radiusKm: int = 5
+    stageKm: int = DEFAULT_STAGE_LENGTH_KM
+    startKm: float = 0
+
+
 @dataclass(frozen=True)
 class RouteData:
     coordinates: list[tuple[float, float]]
@@ -65,21 +73,40 @@ async def analyze_route(
 ) -> dict[str, Any]:
     if not file.filename or not file.filename.lower().endswith(".gpx"):
         raise HTTPException(status_code=400, detail="Ladda upp en GPX-fil.")
-    if radiusKm not in ALLOWED_SEARCH_RADII_KM:
-        raise HTTPException(status_code=400, detail="Välj sökradie 2, 5, 10 eller 20 km.")
-    if stageKm < 50 or stageKm > 1_000:
-        raise HTTPException(status_code=400, detail="Dagsetapp måste vara mellan 50 och 1000 km.")
-    if startKm < 0:
-        raise HTTPException(status_code=400, detail="Startposition kan inte vara negativ.")
 
     content = await file.read()
+    return await analyze_gpx_content(content, radiusKm, stageKm, startKm)
+
+
+@app.post("/api/analyze-json")
+async def analyze_route_json(payload: AnalyzeJsonRequest) -> dict[str, Any]:
+    return await analyze_gpx_content(
+        payload.gpxText.encode("utf-8"),
+        payload.radiusKm,
+        payload.stageKm,
+        payload.startKm,
+    )
+
+
+async def analyze_gpx_content(
+    content: bytes,
+    radius_km: int,
+    stage_km: int,
+    start_km: float,
+) -> dict[str, Any]:
+    if radius_km not in ALLOWED_SEARCH_RADII_KM:
+        raise HTTPException(status_code=400, detail="Välj sökradie 2, 5, 10 eller 20 km.")
+    if stage_km < 50 or stage_km > 1_000:
+        raise HTTPException(status_code=400, detail="Dagsetapp måste vara mellan 50 och 1000 km.")
+    if start_km < 0:
+        raise HTTPException(status_code=400, detail="Startposition kan inte vara negativ.")
     if not content:
         raise HTTPException(status_code=400, detail="GPX-filen är tom.")
 
-    radius_meters = radiusKm * 1_000
+    radius_meters = radius_km * 1_000
     full_route = parse_gpx(content)
     total_length_meters = full_route.line_metric.length
-    start_meters = startKm * 1_000
+    start_meters = start_km * 1_000
     if start_meters >= total_length_meters:
         raise HTTPException(status_code=400, detail="Det finns ingen återstående rutt att analysera.")
 
@@ -88,14 +115,14 @@ async def analyze_route(
     bbox = buffered_bbox(route.coordinates, radius_meters)
     osm_elements = await fetch_osm_elements(route, radius_meters)
     places = filter_places_near_route(osm_elements, route, radius_meters)
-    stages = build_stage_suggestions(route, places, stageKm, radius_meters)
+    stages = build_stage_suggestions(route, places, stage_km, radius_meters)
     has_more_segments = segment_end_meters < total_length_meters
 
     return {
         "route": [[lat, lon] for lon, lat in route.coordinates],
         "bounds": bbox,
         "radiusMeters": radius_meters,
-        "stageKm": stageKm,
+        "stageKm": stage_km,
         "routeLengthMeters": round(total_length_meters),
         "segment": {
             "startMeters": round(start_meters),
