@@ -5,6 +5,7 @@ import logging
 import math
 import asyncio
 import time
+import io
 from dataclasses import dataclass
 from typing import Any
 
@@ -90,7 +91,7 @@ async def analyze_route(
 async def analyze_route_json(payload: AnalyzeJsonRequest) -> dict[str, Any]:
     try:
         return await analyze_gpx_content(
-            payload.gpxText.encode("utf-8"),
+            payload.gpxText,
             payload.radiusKm,
             payload.stageKm,
             payload.startKm,
@@ -103,7 +104,7 @@ async def analyze_route_json(payload: AnalyzeJsonRequest) -> dict[str, Any]:
 
 
 async def analyze_gpx_content(
-    content: bytes,
+    content: bytes | str,
     radius_km: int,
     stage_km: int,
     start_km: float,
@@ -151,10 +152,25 @@ async def analyze_gpx_content(
     }
 
 
-def parse_gpx(content: bytes) -> RouteData:
+def parse_gpx(content: bytes | str) -> RouteData:
     try:
-        text = content.decode("utf-8-sig")
-        gpx = gpxpy.parse(text)
+        if isinstance(content, bytes):
+            raw_content = content
+            text = content.decode("utf-8-sig")
+        else:
+            text = content.lstrip("\ufeff")
+            raw_content = text.encode("utf-8")
+
+        parse_inputs = (io.StringIO(text), text, io.BytesIO(raw_content), raw_content)
+        last_error: Exception | None = None
+        for parse_input in parse_inputs:
+            try:
+                gpx = gpxpy.parse(parse_input)
+                break
+            except Exception as exc:
+                last_error = exc
+        else:
+            raise last_error or ValueError("Could not parse GPX content.")
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Kunde inte läsa GPX-filen.") from exc
 
