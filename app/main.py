@@ -5,13 +5,10 @@ import logging
 import math
 import asyncio
 import time
-import io
-import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Any
 
-import gpxpy
 import httpx
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
@@ -163,50 +160,9 @@ def parse_gpx(content: bytes | str) -> RouteData:
             text = content.lstrip("\ufeff")
             raw_content = text.encode("utf-8")
 
-        try:
-            coordinates = parse_gpx_coordinates_with_elementtree(raw_content)
-            return route_data_from_coordinates(coordinates)
-        except HTTPException:
-            raise
-        except Exception:
-            logger.exception("ElementTree GPX parser fallback failed; trying gpxpy")
-
-        text_without_encoding = re.sub(
-            r'^\s*<\?xml[^>]*encoding=["\'][^"\']+["\'][^>]*\?>',
-            "",
-            text,
-            count=1,
-            flags=re.IGNORECASE,
-        ).lstrip()
-        parse_inputs = (
-            io.BytesIO(raw_content),
-            raw_content,
-            io.StringIO(text_without_encoding),
-            text_without_encoding,
-        )
-        last_error: Exception | None = None
-        for parse_input in parse_inputs:
-            try:
-                gpx = gpxpy.parse(parse_input)
-                break
-            except Exception as exc:
-                last_error = exc
-        else:
-            raise last_error or ValueError("Could not parse GPX content.")
+        coordinates = parse_gpx_coordinates_with_elementtree(raw_content)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Kunde inte läsa GPX-filen.") from exc
-
-    coordinates: list[tuple[float, float]] = []
-
-    for track in gpx.tracks:
-        for segment in track.segments:
-            coordinates.extend((point.longitude, point.latitude) for point in segment.points)
-
-    for route in gpx.routes:
-        coordinates.extend((point.longitude, point.latitude) for point in route.points)
-
-    if len(coordinates) < 2:
-        raise HTTPException(status_code=400, detail="GPX-filen måste innehålla minst två punkter.")
 
     return route_data_from_coordinates(coordinates)
 
