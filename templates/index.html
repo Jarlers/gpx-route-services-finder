@@ -3,9 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0f766e" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="GPX Routes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>GPX Route Services</title>
+    <link rel="icon" href="/static/icons/icon-192.png" sizes="192x192" />
+    <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="/static/styles.css?v=segments-8" />
+    <link rel="stylesheet" href="/static/styles.css?v=mobile-2" />
   </head>
   <body>
     <main class="app-shell">
@@ -54,29 +61,35 @@
         <div id="segment-status" class="segment-status" hidden></div>
         <button id="next-segment" class="secondary-button" type="button" hidden data-i18n="searchNextSegment">Search next segment</button>
 
+        <details class="install-panel">
+          <summary data-i18n="installSummary">Install this app</summary>
+          <p data-i18n="installIos">iPhone: Open in Safari -> Share -> Add to Home Screen.</p>
+          <p data-i18n="installAndroid">Android: Open in Chrome -> Install app / Add to Home screen.</p>
+        </details>
+
         <div class="filters" aria-label="Filters" data-i18n-attr="aria-label:filtersLabel">
           <label><input type="checkbox" value="fuel" checked /> <span data-i18n="fuelStations">Fuel stations</span></label>
           <label><input type="checkbox" value="hotel" checked /> <span data-i18n="lodging">Lodging</span></label>
           <label><input type="checkbox" value="camping" checked /> <span data-i18n="camping">Camping</span></label>
           <label><input type="checkbox" value="food" checked /> <span data-i18n="food">Food</span></label>
         </div>
+      </section>
 
-        <div class="route-results">
-          <div class="results-header">
-            <h2 data-i18n="matchesAlongRoute">Matches along the route</h2>
-            <span id="results-count">0 places</span>
-          </div>
-
-          <div class="stages-panel">
-            <div class="results-header">
-              <h2 data-i18n="dailyStages">Daily stages</h2>
-              <span id="stages-count">0 days</span>
-            </div>
-            <ol id="stages-list" class="stages-list"></ol>
-          </div>
-
-          <ol id="places-list" class="places-list"></ol>
+      <section class="route-results" aria-label="Route results">
+        <div class="results-header">
+          <h2 data-i18n="matchesAlongRoute">Matches along the route</h2>
+          <span id="results-count">0 places</span>
         </div>
+
+        <div class="stages-panel">
+          <div class="results-header">
+            <h2 data-i18n="dailyStages">Daily stages</h2>
+            <span id="stages-count">0 days</span>
+          </div>
+          <ol id="stages-list" class="stages-list"></ol>
+        </div>
+
+        <ol id="places-list" class="places-list"></ol>
       </section>
 
       <section class="map-panel" aria-label="Map" data-i18n-attr="aria-label:mapLabel">
@@ -85,6 +98,6 @@
     </main>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="/static/app.js?v=segments-2"></script>
+    <script src="/static/app.js?v=mobile-2"></script>
   </body>
 </html>

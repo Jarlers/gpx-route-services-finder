@@ -38,6 +38,9 @@ const translations = {
     gpxFile: "GPX file",
     hotel: "Hotel/lodging",
     initialStatus: "Choose a GPX file to begin.",
+    installAndroid: "Android: Open in Chrome -> Install app / Add to Home screen.",
+    installIos: "iPhone: Open in Safari -> Share -> Add to Home Screen.",
+    installSummary: "Install this app",
     language: "Language",
     layerPoi: "POI markers",
     layerSatellite: "Satellite imagery",
@@ -95,6 +98,9 @@ const translations = {
     gpxFile: "GPX-fil",
     hotel: "Hotell/boende",
     initialStatus: "Välj en GPX-fil för att börja.",
+    installAndroid: "Android: Öppna i Chrome -> Installera app / Lägg till på startskärmen.",
+    installIos: "iPhone: Öppna i Safari -> Dela -> Lägg till på hemskärmen.",
+    installSummary: "Installera appen",
     language: "Språk",
     layerPoi: "POI-markörer",
     layerSatellite: "Satellitfoto",
@@ -171,6 +177,11 @@ renderLayerControl();
 window.addEventListener("load", () => scheduleMapResize({ repeat: true }));
 window.addEventListener("resize", () => scheduleMapResize({ repeat: true }));
 window.addEventListener("orientationchange", () => scheduleMapResize({ repeat: true }));
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    scheduleMapResize({ repeat: true });
+  }
+});
 
 if ("ResizeObserver" in window) {
   const mapResizeObserver = new ResizeObserver(() => scheduleMapResize());
@@ -249,7 +260,7 @@ async function analyzeSegment(startKm) {
       t("routeHitSummary", places.length, payload.radiusMeters / 1000, formatDistance(payload.routeLengthMeters)),
     );
   } catch (error) {
-    setStatus(error.message, true);
+    setStatus(userFacingError(error), true);
   } finally {
     submitButton.disabled = false;
     nextSegmentButton.disabled = false;
@@ -564,6 +575,7 @@ function scheduleMapResize(options = {}) {
     if (repeat) {
       setTimeout(() => map.invalidateSize({ animate: false, pan: false }), 120);
       setTimeout(() => map.invalidateSize({ animate: false, pan: false }), 350);
+      setTimeout(() => map.invalidateSize({ animate: false, pan: false }), 800);
     }
   });
 }
@@ -633,6 +645,16 @@ function localizeServerError(message) {
     .replace("Overpass API är tillfälligt otillgängligt", "Overpass API is temporarily unavailable")
     .replace("Försök igen om en stund.", "Try again later.")
     .replace("Rutten är för lång för MVP-sökningen. Använd en rutt på högst cirka", "The route is too long for the MVP search. Use a route of at most about");
+}
+
+function userFacingError(error) {
+  const message = String(error && error.message ? error.message : error || "");
+  if (message.includes("string did not match the expected pattern")) {
+    return currentLanguage === "sv"
+      ? "Webbläsaren stoppade begäran. Ladda om sidan och välj GPX-filen igen."
+      : "The browser blocked the request. Reload the page and choose the GPX file again.";
+  }
+  return message || t("analyzeFailed");
 }
 
 function capitalize(value) {
