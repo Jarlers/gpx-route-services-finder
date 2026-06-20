@@ -254,6 +254,10 @@ async function analyzeSegment(startKm) {
 }
 
 async function requestAnalysis(startKm) {
+  if (shouldPreferJsonUpload()) {
+    return requestJsonAnalysis(startKm);
+  }
+
   try {
     return await requestMultipartAnalysis(startKm);
   } catch (error) {
@@ -297,7 +301,10 @@ async function requestJsonAnalysis(startKm) {
 }
 
 async function responsePayload(response) {
-  const payload = await response.json();
+  const contentType = response.headers.get("content-type") || "";
+  const payload = contentType.includes("application/json")
+    ? await response.json()
+    : { detail: await response.text() };
   if (!response.ok) {
     throw new Error(localizeServerError(payload.detail) || t("analyzeFailed"));
   }
@@ -639,7 +646,20 @@ function safeGpxFilename(file) {
   return safeName.toLowerCase().endsWith(".gpx") ? safeName : "route.gpx";
 }
 
-function readFileText(file) {
+function shouldPreferJsonUpload() {
+  return window.location.protocol === "https:" || window.location.hostname.endsWith("onrender.com");
+}
+
+async function readFileText(file) {
+  if (typeof file.text === "function") {
+    return file.text();
+  }
+
+  if (typeof file.arrayBuffer === "function" && "TextDecoder" in window) {
+    const content = await file.arrayBuffer();
+    return new TextDecoder("utf-8").decode(content);
+  }
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.addEventListener("load", () => resolve(String(reader.result || "")));
