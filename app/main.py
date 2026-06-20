@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import asyncio
 import time
@@ -35,6 +36,7 @@ OVERPASS_URLS = [
 ]
 OVERPASS_HEADERS = {"User-Agent": "gpx-route-services/0.1 (local FastAPI app)"}
 OVERPASS_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+logger = logging.getLogger("gpx-route-services")
 
 
 app = FastAPI(title="GPX Route Services")
@@ -71,21 +73,33 @@ async def analyze_route(
     stageKm: int = Form(DEFAULT_STAGE_LENGTH_KM),
     startKm: float = Form(0),
 ) -> dict[str, Any]:
-    if not file.filename or not file.filename.lower().endswith(".gpx"):
-        raise HTTPException(status_code=400, detail="Ladda upp en GPX-fil.")
+    try:
+        if not file.filename or not file.filename.lower().endswith(".gpx"):
+            raise HTTPException(status_code=400, detail="Ladda upp en GPX-fil.")
 
-    content = await file.read()
-    return await analyze_gpx_content(content, radiusKm, stageKm, startKm)
+        content = await file.read()
+        return await analyze_gpx_content(content, radiusKm, stageKm, startKm)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Multipart GPX analysis failed")
+        raise HTTPException(status_code=500, detail=f"Serverfel vid GPX-analys: {type(exc).__name__}: {exc}") from exc
 
 
 @app.post("/api/analyze-json")
 async def analyze_route_json(payload: AnalyzeJsonRequest) -> dict[str, Any]:
-    return await analyze_gpx_content(
-        payload.gpxText.encode("utf-8"),
-        payload.radiusKm,
-        payload.stageKm,
-        payload.startKm,
-    )
+    try:
+        return await analyze_gpx_content(
+            payload.gpxText.encode("utf-8"),
+            payload.radiusKm,
+            payload.stageKm,
+            payload.startKm,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("JSON GPX analysis failed")
+        raise HTTPException(status_code=500, detail=f"Serverfel vid GPX-analys: {type(exc).__name__}: {exc}") from exc
 
 
 async def analyze_gpx_content(
