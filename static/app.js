@@ -235,12 +235,12 @@ async function analyzeSegment(startKm) {
 
   try {
     const data = new FormData();
-    data.append("file", currentFile);
+    data.append("file", await uploadableGpxFile(currentFile), "route.gpx");
     data.append("radiusKm", radiusInput.value);
     data.append("stageKm", stageInput.value);
     data.append("startKm", startKm);
 
-    const response = await fetch("/api/analyze", {
+    const response = await fetch(apiUrl("/api/analyze"), {
       method: "POST",
       body: data,
     });
@@ -594,6 +594,15 @@ function formatDistance(meters) {
     return `${meters} m`;
   }
   return `${(meters / 1000).toFixed(1)} km`;
+}
+
+async function uploadableGpxFile(file) {
+  const content = await file.arrayBuffer();
+  return new Blob([content], { type: "application/gpx+xml" });
+}
+
+function apiUrl(path) {
+  return `${window.location.origin}${path}`;
 }
 
 function placeCountLabel(count) {
