@@ -163,6 +163,14 @@ def parse_gpx(content: bytes | str) -> RouteData:
             text = content.lstrip("\ufeff")
             raw_content = text.encode("utf-8")
 
+        try:
+            coordinates = parse_gpx_coordinates_with_elementtree(raw_content)
+            return route_data_from_coordinates(coordinates)
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception("ElementTree GPX parser fallback failed; trying gpxpy")
+
         text_without_encoding = re.sub(
             r'^\s*<\?xml[^>]*encoding=["\'][^"\']+["\'][^>]*\?>',
             "",
@@ -184,8 +192,7 @@ def parse_gpx(content: bytes | str) -> RouteData:
             except Exception as exc:
                 last_error = exc
         else:
-            coordinates = parse_gpx_coordinates_with_elementtree(raw_content)
-            return route_data_from_coordinates(coordinates)
+            raise last_error or ValueError("Could not parse GPX content.")
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Kunde inte läsa GPX-filen.") from exc
 
