@@ -6,6 +6,8 @@ import math
 import asyncio
 import time
 import io
+import re
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Any
 
@@ -161,7 +163,19 @@ def parse_gpx(content: bytes | str) -> RouteData:
             text = content.lstrip("\ufeff")
             raw_content = text.encode("utf-8")
 
-        parse_inputs = (io.StringIO(text), text, io.BytesIO(raw_content), raw_content)
+        text_without_encoding = re.sub(
+            r'^\s*<\?xml[^>]*encoding=["\'][^"\']+["\'][^>]*\?>',
+            "",
+            text,
+            count=1,
+            flags=re.IGNORECASE,
+        ).lstrip()
+        parse_inputs = (
+            io.BytesIO(raw_content),
+            raw_content,
+            io.StringIO(text_without_encoding),
+            text_without_encoding,
+        )
         last_error: Exception | None = None
         for parse_input in parse_inputs:
             try:
@@ -170,7 +184,8 @@ def parse_gpx(content: bytes | str) -> RouteData:
             except Exception as exc:
                 last_error = exc
         else:
-            raise last_error or ValueError("Could not parse GPX content.")
+            coordinates = parse_gpx_coordinates_with_elementtree(raw_content)
+            return route_data_from_coordinates(coordinates)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Kunde inte läsa GPX-filen.") from exc
 
@@ -186,6 +201,30 @@ def parse_gpx(content: bytes | str) -> RouteData:
     if len(coordinates) < 2:
         raise HTTPException(status_code=400, detail="GPX-filen måste innehålla minst två punkter.")
 
+    return route_data_from_coordinates(coordinates)
+
+
+def parse_gpx_coordinates_with_elementtree(content: bytes) -> list[tuple[float, float]]:
+    root = ET.fromstring(content)
+    coordinates: list[tuple[float, float]] = []
+
+    for element in root.iter():
+        tag_name = element.tag.rsplit("}", 1)[-1]
+        if tag_name not in {"trkpt", "rtept"}:
+            continue
+        lat = element.attrib.get("lat")
+        lon = element.attrib.get("lon")
+        if lat is None or lon is None:
+            continue
+        coordinates.append((float(lon), float(lat)))
+
+    if len(coordinates) < 2:
+        raise HTTPException(status_code=400, detail="GPX-filen måste innehålla minst två punkter.")
+
+    return coordinates
+
+
+def route_data_from_coordinates(coordinates: list[tuple[float, float]]) -> RouteData:
     line_wgs84 = LineString(coordinates)
     metric_crs = local_azimuthal_crs(coordinates)
     to_metric = Transformer.from_crs(CRS.from_epsg(4326), metric_crs, always_xy=True)
