@@ -71,6 +71,7 @@ const translations = {
     routeHitSummary: (count, radius, routeLength) =>
       `${count} ${count === 1 ? "place" : "places"} found within ${radius} km in the current segment. The full route is ${routeLength}.`,
     searchNearby: "Use my location",
+    searchNearbyDescription: "Search for fuel, lodging, camping and food within 10 km of your current GPS position.",
     searchingNearby: "Getting your position and searching within 10 km...",
     searchNextSegment: "Search next segment",
     searchOn: (start, end) => `Search onward: ${start}-${end}`,
@@ -140,6 +141,7 @@ const translations = {
     routeHitSummary: (count, radius, routeLength) =>
       `${count} platser hittades inom ${radius} km i aktuellt segment. Hela rutten är ${routeLength}.`,
     searchNearby: "Använd min position",
+    searchNearbyDescription: "Sök efter bensin, boende, camping och mat inom 10 km från din aktuella GPS-position.",
     searchingNearby: "Hämtar din position och söker inom 10 km...",
     searchNextSegment: "Sök nästa segment",
     searchOn: (start, end) => `Sök vidare: ${start}-${end}`,

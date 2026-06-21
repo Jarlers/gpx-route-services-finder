@@ -206,6 +206,18 @@ body {
   width: 100%;
 }
 
+.location-search {
+  display: grid;
+  gap: 6px;
+}
+
+.location-search p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .secondary-button:disabled {
   cursor: wait;
   opacity: 0.7;

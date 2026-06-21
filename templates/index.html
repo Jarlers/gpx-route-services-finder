@@ -12,7 +12,7 @@
     <link rel="icon" href="/static/icons/icon-192.png" sizes="192x192" />
     <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="/static/styles.css?v=mobile-12" />
+    <link rel="stylesheet" href="/static/styles.css?v=mobile-13" />
   </head>
   <body>
     <main class="app-shell">
@@ -60,7 +60,10 @@
         <div id="status" class="status" role="status" data-i18n="initialStatus">Choose a GPX file to begin.</div>
         <div id="segment-status" class="segment-status" hidden></div>
         <button id="next-segment" class="secondary-button" type="button" hidden data-i18n="searchNextSegment">Search next segment</button>
-        <button id="nearby-search" class="secondary-button location-button" type="button" data-i18n="searchNearby">Use my location</button>
+        <div class="location-search">
+          <button id="nearby-search" class="secondary-button location-button" type="button" data-i18n="searchNearby">Use my location</button>
+          <p data-i18n="searchNearbyDescription">Search for fuel, lodging, camping and food within 10 km of your current GPS position.</p>
+        </div>
 
         <details class="install-panel">
           <summary data-i18n="installSummary">Install this app</summary>
@@ -99,6 +102,6 @@
     </main>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="/static/app.js?v=mobile-12"></script>
+    <script src="/static/app.js?v=mobile-13"></script>
   </body>
 </html>
