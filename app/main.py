@@ -15,7 +15,6 @@ from pydantic import BaseModel
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pyproj import CRS, Transformer
 from shapely.geometry import LineString, Point
 from shapely.ops import substring, transform
 
@@ -56,9 +55,31 @@ class RouteData:
     coordinates: list[tuple[float, float]]
     line_wgs84: LineString
     line_metric: LineString
-    to_metric: Transformer
-    to_wgs84: Transformer
+    to_metric: "LocalProjection"
+    to_wgs84: "LocalProjection"
     route_offset_meters: float = 0
+
+
+@dataclass(frozen=True)
+class LocalProjection:
+    origin_lon: float
+    origin_lat: float
+    inverse: bool = False
+
+    @property
+    def meters_per_degree_lon(self) -> float:
+        return 111_320 * max(math.cos(math.radians(self.origin_lat)), 0.1)
+
+    def transform(self, x: float, y: float) -> tuple[float, float]:
+        if not self.inverse:
+            return (
+                (x - self.origin_lon) * self.meters_per_degree_lon,
+                (y - self.origin_lat) * 111_320,
+            )
+        return (
+            self.origin_lon + x / self.meters_per_degree_lon,
+            self.origin_lat + y / 111_320,
+        )
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -189,9 +210,12 @@ def parse_gpx_coordinates_with_elementtree(content: bytes) -> list[tuple[float, 
 
 def route_data_from_coordinates(coordinates: list[tuple[float, float]]) -> RouteData:
     line_wgs84 = LineString(coordinates)
-    metric_crs = local_azimuthal_crs(coordinates)
-    to_metric = Transformer.from_crs(CRS.from_epsg(4326), metric_crs, always_xy=True)
-    to_wgs84 = Transformer.from_crs(metric_crs, CRS.from_epsg(4326), always_xy=True)
+    to_metric = local_projection(coordinates)
+    to_wgs84 = LocalProjection(
+        origin_lon=to_metric.origin_lon,
+        origin_lat=to_metric.origin_lat,
+        inverse=True,
+    )
     line_metric = transform(to_metric.transform, line_wgs84)
 
     return RouteData(
@@ -221,12 +245,10 @@ def route_segment(route: RouteData, start_meters: float, end_meters: float) -> R
     )
 
 
-def local_azimuthal_crs(coordinates: list[tuple[float, float]]) -> CRS:
+def local_projection(coordinates: list[tuple[float, float]]) -> LocalProjection:
     avg_lon = sum(lon for lon, _ in coordinates) / len(coordinates)
     avg_lat = sum(lat for _, lat in coordinates) / len(coordinates)
-    return CRS.from_proj4(
-        f"+proj=aeqd +lat_0={avg_lat} +lon_0={avg_lon} +datum=WGS84 +units=m +no_defs"
-    )
+    return LocalProjection(origin_lon=avg_lon, origin_lat=avg_lat)
 
 
 def buffered_bbox(
