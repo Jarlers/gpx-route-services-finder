@@ -590,7 +590,7 @@ body {
       "controls map"
       "results map";
     grid-template-columns: minmax(340px, 440px) minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: minmax(300px, 48dvh) minmax(0, 1fr);
     height: 100vh;
     height: 100dvh;
     min-height: 0;
