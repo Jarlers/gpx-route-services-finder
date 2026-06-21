@@ -4,6 +4,8 @@ const statusBox = document.querySelector("#status");
 const segmentStatus = document.querySelector("#segment-status");
 const nextSegmentButton = document.querySelector("#next-segment");
 const nearbySearchButton = document.querySelector("#nearby-search");
+const nearbyRadiusInput = document.querySelector("#nearby-radius-km");
+const nearbyDescription = document.querySelector("#nearby-description");
 const placesList = document.querySelector("#places-list");
 const resultsTitle = document.querySelector("#results-title");
 const resultsCount = document.querySelector("#results-count");
@@ -71,8 +73,10 @@ const translations = {
     routeHitSummary: (count, radius, routeLength) =>
       `${count} ${count === 1 ? "place" : "places"} found within ${radius} km in the current segment. The full route is ${routeLength}.`,
     searchNearby: "Use my location",
-    searchNearbyDescription: "Search for fuel, lodging, camping and food within 10 km of your current GPS position.",
-    searchingNearby: "Getting your position and searching within 10 km...",
+    searchNearbyDescription: (radius) =>
+      `Search for fuel, lodging, camping and food within ${radius} km of your current GPS position.`,
+    nearbyRadius: "Radius from my position",
+    searchingNearby: (radius) => `Getting your position and searching within ${radius} km...`,
     searchNextSegment: "Search next segment",
     searchOn: (start, end) => `Search onward: ${start}-${end}`,
     searchRadius: "Search radius",
@@ -81,7 +85,7 @@ const translations = {
     stageEnd: "Stage end",
     stops: "stops",
     stop: "stop",
-    tagline: "Fuel, lodging, camping and food within 5 km of the route.",
+    tagline: "Find fuel, lodging, camping and food along a GPX route or near your current position.",
     typeCamping: "Camping",
     typeFood: "Restaurant",
     typeFuel: "Fuel station",
@@ -141,8 +145,10 @@ const translations = {
     routeHitSummary: (count, radius, routeLength) =>
       `${count} platser hittades inom ${radius} km i aktuellt segment. Hela rutten är ${routeLength}.`,
     searchNearby: "Använd min position",
-    searchNearbyDescription: "Sök efter bensin, boende, camping och mat inom 10 km från din aktuella GPS-position.",
-    searchingNearby: "Hämtar din position och söker inom 10 km...",
+    searchNearbyDescription: (radius) =>
+      `Sök efter bensin, boende, camping och mat inom ${radius} km från din aktuella GPS-position.`,
+    nearbyRadius: "Radie från min position",
+    searchingNearby: (radius) => `Hämtar din position och söker inom ${radius} km...`,
     searchNextSegment: "Sök nästa segment",
     searchOn: (start, end) => `Sök vidare: ${start}-${end}`,
     searchRadius: "Sökradie",
@@ -151,7 +157,7 @@ const translations = {
     stageEnd: "Etappslut",
     stops: "stopp",
     stop: "stopp",
-    tagline: "Bensin, boende, camping och mat inom 5 km från rutten.",
+    tagline: "Hitta bensin, boende, camping och mat längs en GPX-rutt eller nära din aktuella position.",
     typeCamping: "Camping",
     typeFood: "Restaurang",
     typeFuel: "Bensinstation",
@@ -242,6 +248,7 @@ nextSegmentButton.addEventListener("click", async () => {
 filterInputs.forEach((input) => input.addEventListener("change", renderPlaces));
 
 nearbySearchButton.addEventListener("click", searchNearbyServices);
+nearbyRadiusInput.addEventListener("change", updateNearbyDescription);
 
 languageInput?.addEventListener("change", () => {
   currentLanguage = languageInput.value;
@@ -289,13 +296,14 @@ async function searchNearbyServices() {
   }
 
   nearbySearchButton.disabled = true;
-  setStatus(t("searchingNearby"));
+  const radiusKm = Number(nearbyRadiusInput.value);
+  setStatus(t("searchingNearby", radiusKm));
 
   try {
     const position = await currentPosition();
     const lat = position.coords.latitude;
     const lon = position.coords.longitude;
-    const payload = await requestNearbyServices(lat, lon);
+    const payload = await requestNearbyServices(lat, lon, radiusKm);
 
     searchMode = "nearby";
     currentFile = null;
@@ -314,7 +322,7 @@ async function searchNearbyServices() {
     stages = [];
     renderStages();
     renderPlaces();
-    renderLocation(lat, lon);
+    renderLocation(lat, lon, payload.radiusMeters);
     map.setView([lat, lon], 12);
     scheduleMapResize({ repeat: true });
     setStatus(t("nearbySummary", places.length, payload.radiusMeters / 1000));
@@ -335,21 +343,21 @@ function currentPosition() {
   });
 }
 
-async function requestNearbyServices(lat, lon) {
+async function requestNearbyServices(lat, lon, radiusKm) {
   const response = await fetch("/api/nearby", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ lat, lon, radiusKm: 10 }),
+    body: JSON.stringify({ lat, lon, radiusKm }),
   });
 
   return responsePayload(response);
 }
 
-function renderLocation(lat, lon) {
+function renderLocation(lat, lon, radiusMeters) {
   L.circle([lat, lon], {
-    radius: 10000,
+    radius: radiusMeters,
     color: "#0f766e",
     weight: 2,
     opacity: 0.8,
@@ -678,6 +686,10 @@ function setStatus(message, isError = false) {
   statusBox.classList.toggle("error", isError);
 }
 
+function updateNearbyDescription() {
+  nearbyDescription.textContent = t("searchNearbyDescription", Number(nearbyRadiusInput.value));
+}
+
 function applyLanguage() {
   document.documentElement.lang = currentLanguage;
 
@@ -697,6 +709,7 @@ function applyLanguage() {
   }
 
   renderLayerControl();
+  updateNearbyDescription();
   updateResultTitle();
   renderPlaces();
   renderStages();
