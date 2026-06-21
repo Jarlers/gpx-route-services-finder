@@ -3,8 +3,11 @@ const fileInput = document.querySelector("#gpx-file");
 const statusBox = document.querySelector("#status");
 const segmentStatus = document.querySelector("#segment-status");
 const nextSegmentButton = document.querySelector("#next-segment");
+const nearbySearchButton = document.querySelector("#nearby-search");
 const placesList = document.querySelector("#places-list");
+const resultsTitle = document.querySelector("#results-title");
 const resultsCount = document.querySelector("#results-count");
+const stagesPanel = document.querySelector(".stages-panel");
 const stagesList = document.querySelector("#stages-list");
 const stagesCount = document.querySelector("#stages-count");
 const radiusInput = document.querySelector("#radius-km");
@@ -29,6 +32,7 @@ const translations = {
     dayTitle: (day, distance) => `Day ${day} - about ${distance}`,
     distanceFromStart: (distance) => `About ${distance} from start`,
     distanceFromStartLabel: (distance) => `Distance from start: about ${distance}`,
+    distanceFromPosition: (distance) => `About ${distance} from your position`,
     endOfStage: (label) => `Stage end: ${label}`,
     filtersLabel: "Filters",
     food: "Food",
@@ -46,12 +50,18 @@ const translations = {
     layerSatellite: "Satellite imagery",
     layerStages: "Stage ends",
     layerStandard: "Standard map",
+    layerLocation: "Your position",
     lodging: "Lodging",
     lodgingNearStage: (count) => `Lodging/camping near stage end: ${count}`,
     mapLabel: "Map",
     matchesAlongRoute: "Matches along the route",
+    matchesNearby: "Matches near you",
     near: (name) => `near ${name}`,
+    nearbySearchFailed: "Could not search near your position.",
+    nearbySummary: (count, radius) =>
+      `${count} ${count === 1 ? "place" : "places"} found within ${radius} km of your position.`,
     noFile: "Choose a GPX file.",
+    noGeolocation: "Location is not available in this browser.",
     noneNearStageEnd: "none near stage end",
     noPlacesForFilters: "No places match the active filters.",
     openInGoogleMaps: "Open in Google Maps",
@@ -60,6 +70,8 @@ const translations = {
     placeFallback: "Place",
     routeHitSummary: (count, radius, routeLength) =>
       `${count} ${count === 1 ? "place" : "places"} found within ${radius} km in the current segment. The full route is ${routeLength}.`,
+    searchNearby: "Use my location",
+    searchingNearby: "Getting your position and searching within 10 km...",
     searchNextSegment: "Search next segment",
     searchOn: (start, end) => `Search onward: ${start}-${end}`,
     searchRadius: "Search radius",
@@ -89,6 +101,7 @@ const translations = {
     dayTitle: (day, distance) => `Dag ${day} - ca ${distance}`,
     distanceFromStart: (distance) => `Ca ${distance} från start`,
     distanceFromStartLabel: (distance) => `Avstånd från start: ca ${distance}`,
+    distanceFromPosition: (distance) => `Ca ${distance} från din position`,
     endOfStage: (label) => `Etappslut: ${label}`,
     filtersLabel: "Filter",
     food: "Mat",
@@ -106,12 +119,18 @@ const translations = {
     layerSatellite: "Satellitfoto",
     layerStages: "Etappslut",
     layerStandard: "Standardkarta",
+    layerLocation: "Din position",
     lodging: "Boende",
     lodgingNearStage: (count) => `Boende/camping nära etappslut: ${count}`,
     mapLabel: "Karta",
     matchesAlongRoute: "Träffar längs rutten",
+    matchesNearby: "Träffar nära dig",
     near: (name) => `nära ${name}`,
+    nearbySearchFailed: "Kunde inte söka nära din position.",
+    nearbySummary: (count, radius) =>
+      `${count} ${count === 1 ? "plats" : "platser"} hittades inom ${radius} km från din position.`,
     noFile: "Välj en GPX-fil.",
+    noGeolocation: "Position är inte tillgängligt i den här webbläsaren.",
     noneNearStageEnd: "inga nära etappslut",
     noPlacesForFilters: "Inga platser matchar aktiva filter.",
     openInGoogleMaps: "Öppna i Google Maps",
@@ -120,6 +139,8 @@ const translations = {
     placeFallback: "Plats",
     routeHitSummary: (count, radius, routeLength) =>
       `${count} platser hittades inom ${radius} km i aktuellt segment. Hela rutten är ${routeLength}.`,
+    searchNearby: "Använd min position",
+    searchingNearby: "Hämtar din position och söker inom 10 km...",
     searchNextSegment: "Sök nästa segment",
     searchOn: (start, end) => `Sök vidare: ${start}-${end}`,
     searchRadius: "Sökradie",
@@ -158,12 +179,14 @@ standardLayer.addTo(map);
 let routeLayer = null;
 let markerLayer = L.layerGroup().addTo(map);
 let stageLayer = L.layerGroup().addTo(map);
+let locationLayer = L.layerGroup().addTo(map);
 let places = [];
 let stages = [];
 let resizeFrame = null;
 let currentFile = null;
 let nextStartKm = null;
 let layerControl = null;
+let searchMode = "route";
 
 const markerStyles = {
   fuel: { color: "#c2410c", symbol: "⛽" },
@@ -202,6 +225,7 @@ form.addEventListener("submit", async (event) => {
   }
 
   currentFile = file;
+  searchMode = "route";
   await analyzeSegment(0);
 });
 
@@ -214,6 +238,8 @@ nextSegmentButton.addEventListener("click", async () => {
 });
 
 filterInputs.forEach((input) => input.addEventListener("change", renderPlaces));
+
+nearbySearchButton.addEventListener("click", searchNearbyServices);
 
 languageInput?.addEventListener("change", () => {
   currentLanguage = languageInput.value;
@@ -237,6 +263,7 @@ async function analyzeSegment(startKm) {
     const payload = await requestAnalysis(startKm);
 
     renderRoute(payload.route);
+    locationLayer.clearLayers();
     places = payload.places;
     stages = payload.stages || [];
     renderPlaces();
@@ -251,6 +278,86 @@ async function analyzeSegment(startKm) {
     submitButton.disabled = false;
     nextSegmentButton.disabled = false;
   }
+}
+
+async function searchNearbyServices() {
+  if (!("geolocation" in navigator)) {
+    setStatus(t("noGeolocation"), true);
+    return;
+  }
+
+  nearbySearchButton.disabled = true;
+  setStatus(t("searchingNearby"));
+
+  try {
+    const position = await currentPosition();
+    const lat = position.coords.latitude;
+    const lon = position.coords.longitude;
+    const payload = await requestNearbyServices(lat, lon);
+
+    searchMode = "nearby";
+    currentFile = null;
+    nextStartKm = null;
+    nextSegmentButton.hidden = true;
+    segmentStatus.hidden = true;
+
+    if (routeLayer) {
+      routeLayer.remove();
+      routeLayer = null;
+    }
+    stageLayer.clearLayers();
+    locationLayer.clearLayers();
+
+    places = payload.places || [];
+    stages = [];
+    renderStages();
+    renderPlaces();
+    renderLocation(lat, lon);
+    map.setView([lat, lon], 12);
+    scheduleMapResize({ repeat: true });
+    setStatus(t("nearbySummary", places.length, payload.radiusMeters / 1000));
+  } catch (error) {
+    setStatus(userFacingError(error) || t("nearbySearchFailed"), true);
+  } finally {
+    nearbySearchButton.disabled = false;
+  }
+}
+
+function currentPosition() {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 60000,
+    });
+  });
+}
+
+async function requestNearbyServices(lat, lon) {
+  const response = await fetch("/api/nearby", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ lat, lon, radiusKm: 10 }),
+  });
+
+  return responsePayload(response);
+}
+
+function renderLocation(lat, lon) {
+  L.circle([lat, lon], {
+    radius: 10000,
+    color: "#0f766e",
+    weight: 2,
+    opacity: 0.8,
+    fillColor: "#0f766e",
+    fillOpacity: 0.08,
+  }).addTo(locationLayer);
+
+  L.marker([lat, lon], {
+    title: t("searchNearby"),
+  }).addTo(locationLayer);
 }
 
 async function requestAnalysis(startKm) {
@@ -363,6 +470,7 @@ function renderPlaces() {
 
   markerLayer.clearLayers();
   placesList.innerHTML = "";
+  updateResultTitle();
   resultsCount.textContent = placeCountLabel(visiblePlaces.length);
 
   for (const place of visiblePlaces) {
@@ -387,6 +495,7 @@ function renderPlaces() {
 function renderStages() {
   stageLayer.clearLayers();
   stagesList.innerHTML = "";
+  stagesPanel.hidden = searchMode === "nearby";
   stagesCount.textContent = dayCountLabel(stages.length);
 
   for (const stage of stages) {
@@ -411,10 +520,16 @@ function placeListItem(place, marker) {
   name.textContent = place.name;
 
   const meta = document.createElement("span");
-  meta.textContent = t("withinRoute", typeLabel(place.type), formatDistance(place.distanceMeters));
+  meta.textContent =
+    searchMode === "nearby"
+      ? `${typeLabel(place.type)} - ${t("distanceFromPosition", formatDistance(place.distanceMeters))}`
+      : t("withinRoute", typeLabel(place.type), formatDistance(place.distanceMeters));
 
   const routeDistance = document.createElement("span");
-  routeDistance.textContent = t("distanceFromStart", formatDistance(place.routeDistanceMeters));
+  routeDistance.textContent =
+    searchMode === "nearby"
+      ? t("distanceFromPosition", formatDistance(place.distanceMeters))
+      : t("distanceFromStart", formatDistance(place.routeDistanceMeters));
 
   const details = document.createElement("span");
   details.textContent = place.tags.brand || place.tags.operator || place.tags["addr:city"] || "";
@@ -486,10 +601,14 @@ function stageListItem(stage) {
 
 function popupHtml(place) {
   const detail = place.tags.brand || place.tags.operator || place.tags.website || "";
+  const distanceLabel =
+    searchMode === "nearby"
+      ? t("distanceFromPosition", formatDistance(place.distanceMeters))
+      : t("withinRoute", typeLabel(place.type), formatDistance(place.distanceMeters));
   return `
     <p class="popup-title">${escapeHtml(place.name)}</p>
-    <p class="popup-meta">${escapeHtml(t("withinRoute", typeLabel(place.type), formatDistance(place.distanceMeters)))}</p>
-    <p class="popup-meta">${escapeHtml(t("distanceFromStart", formatDistance(place.routeDistanceMeters)))}</p>
+    <p class="popup-meta">${escapeHtml(distanceLabel)}</p>
+    ${searchMode === "nearby" ? "" : `<p class="popup-meta">${escapeHtml(t("distanceFromStart", formatDistance(place.routeDistanceMeters)))}</p>`}
     ${detail ? `<p class="popup-meta">${escapeHtml(detail)}</p>` : ""}
     <p class="popup-link"><a href="${escapeHtml(place.googleMapsUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(t("openInGoogleMaps"))}</a></p>
   `;
@@ -576,11 +695,16 @@ function applyLanguage() {
   }
 
   renderLayerControl();
+  updateResultTitle();
   renderPlaces();
   renderStages();
   if (nextStartKm !== null) {
     nextSegmentButton.textContent = t("searchNextSegment");
   }
+}
+
+function updateResultTitle() {
+  resultsTitle.textContent = searchMode === "nearby" ? t("matchesNearby") : t("matchesAlongRoute");
 }
 
 function renderLayerControl() {
@@ -597,6 +721,7 @@ function renderLayerControl() {
       {
         [t("layerPoi")]: markerLayer,
         [t("layerStages")]: stageLayer,
+        [t("layerLocation")]: locationLayer,
       },
       {
         position: "topright",
@@ -721,6 +846,23 @@ function localizeServerError(message) {
 
 function userFacingError(error) {
   const message = String(error && error.message ? error.message : error || "");
+  if (error && typeof error.code === "number" && "GeolocationPositionError" in window) {
+    if (error.code === GeolocationPositionError.PERMISSION_DENIED) {
+      return currentLanguage === "sv"
+        ? "Ge platsåtkomst i webbläsaren och försök igen."
+        : "Allow location access in the browser and try again.";
+    }
+    if (error.code === GeolocationPositionError.POSITION_UNAVAILABLE) {
+      return currentLanguage === "sv"
+        ? "Din position kunde inte hämtas just nu."
+        : "Your position is not available right now.";
+    }
+    if (error.code === GeolocationPositionError.TIMEOUT) {
+      return currentLanguage === "sv"
+        ? "Det tog för lång tid att hämta positionen."
+        : "Getting your position took too long.";
+    }
+  }
   if (isBrowserPatternError(error)) {
     return currentLanguage === "sv"
       ? "Webbläsaren blockerade uppladdningen. Prova att flytta GPX-filen till Filer/Hämtade filer och välj den igen."

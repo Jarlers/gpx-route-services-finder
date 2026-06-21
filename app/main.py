@@ -50,6 +50,12 @@ class AnalyzeJsonRequest(BaseModel):
     startKm: float = 0
 
 
+class NearbyRequest(BaseModel):
+    lat: float
+    lon: float
+    radiusKm: int = 10
+
+
 @dataclass(frozen=True)
 class RouteData:
     coordinates: list[tuple[float, float]]
@@ -121,6 +127,30 @@ async def analyze_route_json(payload: AnalyzeJsonRequest) -> dict[str, Any]:
     except Exception as exc:
         logger.exception("JSON GPX analysis failed")
         raise HTTPException(status_code=500, detail=f"Serverfel vid GPX-analys: {type(exc).__name__}: {exc}") from exc
+
+
+@app.post("/api/nearby")
+async def nearby_services(payload: NearbyRequest) -> dict[str, Any]:
+    try:
+        if not -90 <= payload.lat <= 90 or not -180 <= payload.lon <= 180:
+            raise HTTPException(status_code=400, detail="Ogiltig GPS-position.")
+        if payload.radiusKm < 1 or payload.radiusKm > 50:
+            raise HTTPException(status_code=400, detail="Sökradie måste vara mellan 1 och 50 km.")
+
+        radius_meters = payload.radiusKm * 1_000
+        osm_elements = await fetch_osm_elements_near_point(payload.lat, payload.lon, radius_meters)
+        places = filter_places_near_point(osm_elements, payload.lat, payload.lon, radius_meters)
+
+        return {
+            "center": {"lat": payload.lat, "lon": payload.lon},
+            "radiusMeters": radius_meters,
+            "places": places,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Nearby services search failed")
+        raise HTTPException(status_code=500, detail=f"Serverfel vid positionssökning: {type(exc).__name__}: {exc}") from exc
 
 
 async def analyze_gpx_content(
@@ -309,6 +339,17 @@ async def fetch_osm_elements(route: RouteData, radius_meters: int) -> list[dict[
         raise HTTPException(status_code=502, detail="Overpass API gav ett ogiltigt svar.") from exc
 
     return list(elements_by_key.values())
+
+
+async def fetch_osm_elements_near_point(
+    lat: float,
+    lon: float,
+    radius_meters: int,
+) -> list[dict[str, Any]]:
+    query = build_overpass_query([(lat, lon)], radius_meters)
+    async with httpx.AsyncClient(timeout=45, headers=OVERPASS_HEADERS) as client:
+        payload = await fetch_overpass_payload(client, query, asyncio.Semaphore(1))
+    return payload.get("elements", [])
 
 
 async def fetch_overpass_payload(
@@ -506,6 +547,66 @@ def filter_places_near_route(
         )
 
     return sorted(places, key=lambda item: (item["routeDistanceMeters"], item["distanceMeters"], item["name"].lower()))
+
+
+def filter_places_near_point(
+    elements: list[dict[str, Any]],
+    center_lat: float,
+    center_lon: float,
+    radius_meters: int,
+) -> list[dict[str, Any]]:
+    places: list[dict[str, Any]] = []
+    seen: set[tuple[str, int]] = set()
+
+    for element in elements:
+        point = element_point(element)
+        if point is None:
+            continue
+
+        lon, lat = point
+        distance = haversine_meters(center_lat, center_lon, lat, lon)
+        if distance > radius_meters:
+            continue
+
+        element_key = (element.get("type", "unknown"), int(element.get("id", 0)))
+        if element_key in seen:
+            continue
+        seen.add(element_key)
+
+        tags = element.get("tags", {})
+        place_type = classify_place(tags)
+        places.append(
+            {
+                "id": f"{element_key[0]}-{element_key[1]}",
+                "name": tags.get("name") or label_for_type(place_type),
+                "type": place_type,
+                "lat": lat,
+                "lon": lon,
+                "distanceMeters": round(distance),
+                "routeDistanceMeters": round(distance),
+                "googleMapsUrl": f"https://www.google.com/maps/search/?api=1&query={lat},{lon}",
+                "tags": {
+                    key: tags[key]
+                    for key in ("brand", "operator", "website", "phone", "addr:city", "addr:street")
+                    if key in tags
+                },
+            }
+        )
+
+    return sorted(places, key=lambda item: (item["distanceMeters"], item["name"].lower()))
+
+
+def haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    radius = 6_371_000
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+    a = (
+        math.sin(delta_phi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+    )
+    return radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
 def build_stage_suggestions(

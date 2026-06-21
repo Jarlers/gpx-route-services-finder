@@ -202,6 +202,10 @@ body {
   background: #eef7f6;
 }
 
+.location-button {
+  width: 100%;
+}
+
 .secondary-button:disabled {
   cursor: wait;
   opacity: 0.7;
