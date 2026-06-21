@@ -2,6 +2,7 @@ const form = document.querySelector("#upload-form");
 const fileInput = document.querySelector("#gpx-file");
 const statusBox = document.querySelector("#status");
 const segmentStatus = document.querySelector("#segment-status");
+const segmentHelp = document.querySelector("#segment-help");
 const nextSegmentButton = document.querySelector("#next-segment");
 const nearbySearchButton = document.querySelector("#nearby-search");
 const nearbyRadiusInput = document.querySelector("#nearby-radius-km");
@@ -80,6 +81,8 @@ const translations = {
     searchNextSegment: "Search next segment",
     searchOn: (start, end) => `Search onward: ${start}-${end}`,
     searchRadius: "Search radius",
+    segmentHelp:
+      "Route searches are limited to 350 km at a time because longer routes can contain too much map data. Use Search onward to analyze the next segment.",
     showStageEndInGoogleMaps: "Show stage end in Google Maps",
     sidebarLabel: "Route analysis",
     stageEnd: "Stage end",
@@ -152,6 +155,8 @@ const translations = {
     searchNextSegment: "Sök nästa segment",
     searchOn: (start, end) => `Sök vidare: ${start}-${end}`,
     searchRadius: "Sökradie",
+    segmentHelp:
+      "Ruttsökningar är begränsade till 350 km åt gången eftersom längre rutter kan innehålla för mycket kartdata. Klicka på Sök vidare för att analysera nästa segment.",
     showStageEndInGoogleMaps: "Visa etappslut i Google Maps",
     sidebarLabel: "Ruttanalys",
     stageEnd: "Etappslut",
@@ -310,6 +315,7 @@ async function searchNearbyServices() {
     nextStartKm = null;
     nextSegmentButton.hidden = true;
     segmentStatus.hidden = true;
+    segmentHelp.hidden = true;
 
     if (routeLayer) {
       routeLayer.remove();
@@ -449,12 +455,14 @@ function renderRoute(route) {
 function updateSegmentControls(segment, totalRouteMeters) {
   if (!segment) {
     segmentStatus.hidden = true;
+    segmentHelp.hidden = true;
     nextSegmentButton.hidden = true;
     nextStartKm = null;
     return;
   }
 
   segmentStatus.hidden = false;
+  segmentHelp.hidden = false;
   segmentStatus.textContent = t(
     "currentSegment",
     formatDistance(segment.startMeters),

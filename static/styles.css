@@ -165,6 +165,13 @@ body {
   line-height: 1.35;
 }
 
+.segment-help {
+  margin: -6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .install-panel {
   border: 1px solid var(--line);
   border-radius: 8px;

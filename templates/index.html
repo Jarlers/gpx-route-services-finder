@@ -12,7 +12,7 @@
     <link rel="icon" href="/static/icons/icon-192.png" sizes="192x192" />
     <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="/static/styles.css?v=mobile-16" />
+    <link rel="stylesheet" href="/static/styles.css?v=mobile-17" />
   </head>
   <body>
     <main class="app-shell">
@@ -59,6 +59,7 @@
 
         <div id="status" class="status" role="status" data-i18n="initialStatus">Choose a GPX file to begin.</div>
         <div id="segment-status" class="segment-status" hidden></div>
+        <p id="segment-help" class="segment-help" hidden data-i18n="segmentHelp">Route searches are limited to 350 km at a time because longer routes can contain too much map data. Use Search onward to analyze the next segment.</p>
         <button id="next-segment" class="secondary-button" type="button" hidden data-i18n="searchNextSegment">Search next segment</button>
         <div class="location-search">
           <label for="nearby-radius-km">
@@ -111,6 +112,6 @@
     </main>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="/static/app.js?v=mobile-16"></script>
+    <script src="/static/app.js?v=mobile-17"></script>
   </body>
 </html>
