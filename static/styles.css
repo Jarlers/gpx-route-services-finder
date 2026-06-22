@@ -10,7 +10,8 @@
   --danger: #b42318;
   --fuel: #c2410c;
   --hotel: #2563eb;
-  --camping: #15803d;
+  --campground: #15803d;
+  --shelter: #92400e;
   --food: #9333ea;
 }
 
@@ -335,8 +336,13 @@ body {
   border-left-color: var(--hotel);
 }
 
-.place[data-type="camping"] {
-  border-left-color: var(--camping);
+.place[data-type="camping"],
+.place[data-type="campground"] {
+  border-left-color: var(--campground);
+}
+
+.place[data-type="shelter"] {
+  border-left-color: var(--shelter);
 }
 
 .place[data-type="food"] {

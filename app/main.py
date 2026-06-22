@@ -19,13 +19,14 @@ from shapely.geometry import LineString, Point
 from shapely.ops import substring, transform
 
 
-DEFAULT_SEARCH_RADIUS_METERS = 5_000
-ALLOWED_SEARCH_RADII_KM = {2, 5, 10, 20}
+DEFAULT_SEARCH_RADIUS_KM = 2.0
+DEFAULT_SEARCH_RADIUS_METERS = 2_000
+ALLOWED_SEARCH_RADII_KM = {0.5, 1, 2, 5, 10}
 DEFAULT_STAGE_LENGTH_KM = 250
 MAX_ANALYSIS_SEGMENT_KM = 350
 SEARCH_POINT_SPACING_METERS = 10_000
 MAX_SEARCH_POINTS = 200
-OVERPASS_BATCH_SIZE = 12
+OVERPASS_BATCH_SIZE = 20
 OVERPASS_CONCURRENCY = 1
 OVERPASS_CACHE_TTL_SECONDS = 1_800
 OVERPASS_URLS = [
@@ -45,7 +46,7 @@ templates = Jinja2Templates(directory="templates")
 
 class AnalyzeJsonRequest(BaseModel):
     gpxText: str
-    radiusKm: int = 5
+    radiusKm: float = DEFAULT_SEARCH_RADIUS_KM
     stageKm: int = DEFAULT_STAGE_LENGTH_KM
     startKm: float = 0
 
@@ -96,7 +97,7 @@ async def index(request: Request) -> HTMLResponse:
 @app.post("/api/analyze")
 async def analyze_route(
     file: UploadFile = File(...),
-    radiusKm: int = Form(5),
+    radiusKm: float = Form(DEFAULT_SEARCH_RADIUS_KM),
     stageKm: int = Form(DEFAULT_STAGE_LENGTH_KM),
     startKm: float = Form(0),
 ) -> dict[str, Any]:
@@ -155,12 +156,12 @@ async def nearby_services(payload: NearbyRequest) -> dict[str, Any]:
 
 async def analyze_gpx_content(
     content: bytes | str,
-    radius_km: int,
+    radius_km: float,
     stage_km: int,
     start_km: float,
 ) -> dict[str, Any]:
     if radius_km not in ALLOWED_SEARCH_RADII_KM:
-        raise HTTPException(status_code=400, detail="Välj sökradie 2, 5, 10 eller 20 km.")
+        raise HTTPException(status_code=400, detail="Välj sökradie 0.5, 1, 2, 5 eller 10 km.")
     if stage_km < 50 or stage_km > 1_000:
         raise HTTPException(status_code=400, detail="Dagsetapp måste vara mellan 50 och 1000 km.")
     if start_km < 0:
@@ -168,7 +169,7 @@ async def analyze_gpx_content(
     if not content:
         raise HTTPException(status_code=400, detail="GPX-filen är tom.")
 
-    radius_meters = radius_km * 1_000
+    radius_meters = round(radius_km * 1_000)
     full_route = parse_gpx(content)
     total_length_meters = full_route.line_metric.length
     start_meters = start_km * 1_000
@@ -471,9 +472,15 @@ def build_overpass_query(points: list[tuple[float, float]], radius_meters: int) 
                 f'node["amenity"="restaurant"]{area};',
                 f'way["amenity"="restaurant"]{area};',
                 f'relation["amenity"="restaurant"]{area};',
-                f'node["tourism"~"^(hotel|guest_house|camp_site)$"]{area};',
-                f'way["tourism"~"^(hotel|guest_house|camp_site)$"]{area};',
-                f'relation["tourism"~"^(hotel|guest_house|camp_site)$"]{area};',
+                f'node["tourism"~"^(hotel|guest_house|camp_site|wilderness_hut)$"]{area};',
+                f'way["tourism"~"^(hotel|guest_house|camp_site|wilderness_hut)$"]{area};',
+                f'relation["tourism"~"^(hotel|guest_house|camp_site|wilderness_hut)$"]{area};',
+                f'node["amenity"="shelter"]{area};',
+                f'way["amenity"="shelter"]{area};',
+                f'relation["amenity"="shelter"]{area};',
+                f'node["shelter_type"="lean_to"]{area};',
+                f'way["shelter_type"="lean_to"]{area};',
+                f'relation["shelter_type"="lean_to"]{area};',
             ]
         )
 
@@ -528,6 +535,8 @@ def filter_places_near_route(
 
         tags = element.get("tags", {})
         place_type = classify_place(tags)
+        if place_type == "ignore":
+            continue
         places.append(
             {
                 "id": f"{element_key[0]}-{element_key[1]}",
@@ -537,10 +546,12 @@ def filter_places_near_route(
                 "lon": lon,
                 "distanceMeters": round(distance),
                 "routeDistanceMeters": round(route_distance),
+                "elevation": elevation_from_tags(tags),
+                "notes": notes_for_place(place_type, tags),
                 "googleMapsUrl": f"https://www.google.com/maps/search/?api=1&query={lat},{lon}",
                 "tags": {
                     key: tags[key]
-                    for key in ("brand", "operator", "website", "phone", "addr:city", "addr:street")
+                    for key in ("brand", "operator", "website", "phone", "addr:city", "addr:street", "tourism", "amenity", "shelter_type")
                     if key in tags
                 },
             }
@@ -575,6 +586,8 @@ def filter_places_near_point(
 
         tags = element.get("tags", {})
         place_type = classify_place(tags)
+        if place_type == "ignore":
+            continue
         places.append(
             {
                 "id": f"{element_key[0]}-{element_key[1]}",
@@ -584,10 +597,12 @@ def filter_places_near_point(
                 "lon": lon,
                 "distanceMeters": round(distance),
                 "routeDistanceMeters": round(distance),
+                "elevation": elevation_from_tags(tags),
+                "notes": notes_for_place(place_type, tags),
                 "googleMapsUrl": f"https://www.google.com/maps/search/?api=1&query={lat},{lon}",
                 "tags": {
                     key: tags[key]
-                    for key in ("brand", "operator", "website", "phone", "addr:city", "addr:street")
+                    for key in ("brand", "operator", "website", "phone", "addr:city", "addr:street", "tourism", "amenity", "shelter_type")
                     if key in tags
                 },
             }
@@ -677,7 +692,7 @@ def places_near_stage_end(
 
         if place["type"] == "fuel":
             fuel.append(suggestion)
-        elif place["type"] in {"hotel", "camping"}:
+        elif place["type"] in {"hotel", "campground", "shelter"}:
             lodging.append(suggestion)
 
     return {
@@ -705,16 +720,39 @@ def classify_place(tags: dict[str, str]) -> str:
 
     tourism = tags.get("tourism")
     if tourism == "camp_site":
-        return "camping"
+        return "campground"
+    if tourism == "wilderness_hut" or tags.get("amenity") == "shelter" or tags.get("shelter_type") == "lean_to":
+        return "shelter"
+    if tourism in {"hotel", "guest_house"}:
+        return "hotel"
 
-    return "hotel"
+    return "ignore"
 
 
 def label_for_type(place_type: str) -> str:
     labels = {
         "fuel": "Bensinstation",
         "hotel": "Boende",
-        "camping": "Camping",
+        "campground": "Campingplats",
+        "shelter": "Vindskydd",
         "food": "Restaurang",
     }
     return labels.get(place_type, "Plats")
+
+
+def elevation_from_tags(tags: dict[str, str]) -> float | None:
+    value = tags.get("ele")
+    if not value:
+        return None
+    try:
+        return round(float(value.replace(",", ".")), 1)
+    except ValueError:
+        return None
+
+
+def notes_for_place(place_type: str, tags: dict[str, str]) -> str:
+    if place_type == "shelter":
+        return tags.get("shelter_type") or tags.get("tourism") or tags.get("amenity") or ""
+    if place_type == "campground":
+        return tags.get("operator") or tags.get("website") or ""
+    return ""

@@ -27,6 +27,7 @@ const translations = {
     analyzingRoute: "Analyzing the route and fetching OSM data...",
     analyzingSegment: (distance) => `Analyzing the next route segment from about ${distance}...`,
     camping: "Camping",
+    campgrounds: "Campgrounds",
     currentSegment: (start, end, total) => `Showing ${start}-${end} of ${total}.`,
     dailyStage: "Daily stage",
     dailyStages: "Daily stages",
@@ -68,6 +69,10 @@ const translations = {
     noneNearStageEnd: "none near stage end",
     noPlacesForFilters: "No places match the active filters.",
     openInGoogleMaps: "Open in Google Maps",
+    coordinates: "Coordinates",
+    elevation: "Elevation",
+    elevationUnknown: "Elevation unavailable",
+    notes: "Notes",
     place: "place",
     places: "places",
     placeFallback: "Place",
@@ -75,7 +80,7 @@ const translations = {
       `${count} ${count === 1 ? "place" : "places"} found within ${radius} km in the current segment. The full route is ${routeLength}.`,
     searchNearby: "Use my location",
     searchNearbyDescription: (radius) =>
-      `Search for fuel, lodging, camping and food within ${radius} km of your current GPS position.`,
+      `Search for fuel, lodging, campgrounds, shelters and food within ${radius} km of your current GPS position.`,
     nearbyRadius: "Radius from my position",
     searchingNearby: (radius) => `Getting your position and searching within ${radius} km...`,
     searchNextSegment: "Search next segment",
@@ -90,10 +95,13 @@ const translations = {
     stop: "stop",
     tagline: "Find fuel, lodging, camping and food along a GPX route or near your current position.",
     typeCamping: "Camping",
+    typeCampground: "Campground",
     typeFood: "Restaurant",
     typeFuel: "Fuel station",
     typeHotel: "Hotel/lodging",
+    typeShelter: "Shelter",
     withinRoute: (type, distance) => `${type} - ${distance} from the route`,
+    shelters: "Shelters",
   },
   sv: {
     analyzeFailed: "Analysen misslyckades.",
@@ -101,6 +109,7 @@ const translations = {
     analyzingRoute: "Analyserar rutten och hämtar OSM-data...",
     analyzingSegment: (distance) => `Analyserar nästa ruttsegment från ca ${distance}...`,
     camping: "Camping",
+    campgrounds: "Campingplatser",
     currentSegment: (start, end, total) => `Visar ${start}-${end} av ${total}.`,
     dailyStage: "Dagsetapp",
     dailyStages: "Dagsetapper",
@@ -142,6 +151,10 @@ const translations = {
     noneNearStageEnd: "inga nära etappslut",
     noPlacesForFilters: "Inga platser matchar aktiva filter.",
     openInGoogleMaps: "Öppna i Google Maps",
+    coordinates: "Koordinater",
+    elevation: "Höjd",
+    elevationUnknown: "Höjd saknas",
+    notes: "Anteckningar",
     place: "plats",
     places: "platser",
     placeFallback: "Plats",
@@ -149,7 +162,7 @@ const translations = {
       `${count} platser hittades inom ${radius} km i aktuellt segment. Hela rutten är ${routeLength}.`,
     searchNearby: "Använd min position",
     searchNearbyDescription: (radius) =>
-      `Sök efter bensin, boende, camping och mat inom ${radius} km från din aktuella GPS-position.`,
+      `Sök efter bensin, boende, campingplatser, vindskydd och mat inom ${radius} km från din aktuella GPS-position.`,
     nearbyRadius: "Radie från min position",
     searchingNearby: (radius) => `Hämtar din position och söker inom ${radius} km...`,
     searchNextSegment: "Sök nästa segment",
@@ -164,10 +177,13 @@ const translations = {
     stop: "stopp",
     tagline: "Hitta bensin, boende, camping och mat längs en GPX-rutt eller nära din aktuella position.",
     typeCamping: "Camping",
+    typeCampground: "Campingplats",
     typeFood: "Restaurang",
     typeFuel: "Bensinstation",
     typeHotel: "Hotell/boende",
+    typeShelter: "Vindskydd",
     withinRoute: (type, distance) => `${type} - ${distance} från rutten`,
+    shelters: "Vindskydd",
   },
 };
 
@@ -204,7 +220,8 @@ let searchMode = "route";
 const markerStyles = {
   fuel: { color: "#c2410c", symbol: "⛽" },
   hotel: { color: "#2563eb", symbol: "🛏" },
-  camping: { color: "#15803d", symbol: "⛺" },
+  campground: { color: "#15803d", symbol: "⛺" },
+  shelter: { color: "#92400e", symbol: "⌂" },
   food: { color: "#9333ea", symbol: "🍴" },
 };
 
@@ -627,6 +644,9 @@ function popupHtml(place) {
     <p class="popup-title">${escapeHtml(place.name)}</p>
     <p class="popup-meta">${escapeHtml(distanceLabel)}</p>
     ${searchMode === "nearby" ? "" : `<p class="popup-meta">${escapeHtml(t("distanceFromStart", formatDistance(place.routeDistanceMeters)))}</p>`}
+    <p class="popup-meta">${escapeHtml(t("coordinates"))}: ${escapeHtml(compactCoordinate(place.lat, place.lon))}</p>
+    <p class="popup-meta">${escapeHtml(t("elevation"))}: ${escapeHtml(place.elevation === null || place.elevation === undefined ? t("elevationUnknown") : `${place.elevation} m`)}</p>
+    ${place.notes ? `<p class="popup-meta">${escapeHtml(t("notes"))}: ${escapeHtml(place.notes)}</p>` : ""}
     ${detail ? `<p class="popup-meta">${escapeHtml(detail)}</p>` : ""}
     <p class="popup-link"><a href="${escapeHtml(place.googleMapsUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(t("openInGoogleMaps"))}</a></p>
   `;
@@ -638,7 +658,7 @@ function stagePopupHtml(stage) {
     <p class="popup-meta">${escapeHtml(t("endOfStage", stageEndLabel(stage)))}</p>
     <p class="popup-meta">${escapeHtml(t("distanceFromStartLabel", formatDistance(stage.endRouteDistanceMeters)))}</p>
     <p class="popup-meta">${escapeHtml(t("fuel"))}: ${escapeHtml(suggestionNames(stage.fuelStops))}</p>
-    <p class="popup-meta">${escapeHtml(t("lodging"))}/${escapeHtml(t("camping").toLowerCase())}: ${escapeHtml(suggestionNames(stage.lodging))}</p>
+    <p class="popup-meta">${escapeHtml(t("lodging"))}/${escapeHtml(t("campgrounds").toLowerCase())}: ${escapeHtml(suggestionNames(stage.lodging))}</p>
   `;
 }
 
@@ -777,6 +797,8 @@ function typeLabel(type) {
     fuel: t("typeFuel"),
     hotel: t("typeHotel"),
     camping: t("typeCamping"),
+    campground: t("typeCampground"),
+    shelter: t("typeShelter"),
     food: t("typeFood"),
   }[type] || t("placeFallback");
 }
@@ -841,7 +863,7 @@ function localizeServerError(message) {
   }
 
   const serverErrors = {
-    "Välj sökradie 2, 5, 10 eller 20 km.": "Choose search radius 2, 5, 10 or 20 km.",
+    "Välj sökradie 0.5, 1, 2, 5 eller 10 km.": "Choose search radius 0.5, 1, 2, 5 or 10 km.",
     "Dagsetapp måste vara mellan 50 och 1000 km.": "Daily stage must be between 50 and 1000 km.",
     "GPX-filen är tom.": "The GPX file is empty.",
     "Det finns ingen återstående rutt att analysera.": "There is no remaining route to analyze.",

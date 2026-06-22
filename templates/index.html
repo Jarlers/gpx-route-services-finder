@@ -12,7 +12,7 @@
     <link rel="icon" href="/static/icons/icon-192.png" sizes="192x192" />
     <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="/static/styles.css?v=mobile-17" />
+    <link rel="stylesheet" href="/static/styles.css?v=camping-2" />
   </head>
   <body>
     <main class="app-shell">
@@ -33,10 +33,11 @@
             <label for="radius-km">
               <span data-i18n="searchRadius">Search radius</span>
               <select id="radius-km" name="radiusKm">
-                <option value="2">2 km</option>
-                <option value="5" selected>5 km</option>
+                <option value="0.5">0.5 km</option>
+                <option value="1">1 km</option>
+                <option value="2" selected>2 km</option>
+                <option value="5">5 km</option>
                 <option value="10">10 km</option>
-                <option value="20">20 km</option>
               </select>
             </label>
 
@@ -72,7 +73,7 @@
             </select>
           </label>
           <button id="nearby-search" class="secondary-button location-button" type="button" data-i18n="searchNearby">Use my location</button>
-          <p id="nearby-description">Search for fuel, lodging, camping and food within 10 km of your current GPS position.</p>
+          <p id="nearby-description">Search for fuel, lodging, campgrounds, shelters and food within 10 km of your current GPS position.</p>
         </div>
 
         <details class="install-panel">
@@ -84,7 +85,8 @@
         <div class="filters" aria-label="Filters" data-i18n-attr="aria-label:filtersLabel">
           <label><input type="checkbox" value="fuel" checked /> <span data-i18n="fuelStations">Fuel stations</span></label>
           <label><input type="checkbox" value="hotel" checked /> <span data-i18n="lodging">Lodging</span></label>
-          <label><input type="checkbox" value="camping" checked /> <span data-i18n="camping">Camping</span></label>
+          <label><input type="checkbox" value="campground" checked /> <span data-i18n="campgrounds">Campgrounds</span></label>
+          <label><input type="checkbox" value="shelter" checked /> <span data-i18n="shelters">Shelters</span></label>
           <label><input type="checkbox" value="food" checked /> <span data-i18n="food">Food</span></label>
         </div>
       </section>
@@ -112,6 +114,6 @@
     </main>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="/static/app.js?v=mobile-17"></script>
+    <script src="/static/app.js?v=camping-2"></script>
   </body>
 </html>
