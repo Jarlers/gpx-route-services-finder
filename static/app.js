@@ -27,7 +27,6 @@ const clearBuiltRouteButton = document.querySelector("#clear-built-route");
 const trailSyncIndicator = document.querySelector("#trail-sync-indicator");
 const trailSyncText = document.querySelector("#trail-sync-text");
 const summaryDistance = document.querySelector("#summary-distance");
-const summaryElevation = document.querySelector("#summary-elevation");
 const summaryRideTime = document.querySelector("#summary-ride-time");
 const summaryTrailSegments = document.querySelector("#summary-trail-segments");
 const summaryGpx = document.querySelector("#summary-gpx");
@@ -123,13 +122,11 @@ const translations = {
     trailSyncSkipped: "Zoom in to sync trails",
     trailSyncError: "Trail sync delayed",
     summaryDistance: "Distance",
-    summaryElevation: "Elevation",
-    summaryRideTime: "Est. ride time",
+    summaryRideTime: "Est. Time",
     summaryTrailSegments: "Trail segments",
     summaryGpx: "GPX export",
     gpxReady: "Ready",
     gpxNotReady: "Not ready",
-    elevationUnavailable: "—",
     waypointsSummary: (count) => `${count} ${count === 1 ? "waypoint" : "waypoints"}`,
     searchNearby: "Use my location",
     searchNearbyDescription: (radius) =>
@@ -244,13 +241,11 @@ const translations = {
     trailSyncSkipped: "Zooma in för att synka leder",
     trailSyncError: "Led-synk fördröjd",
     summaryDistance: "Distans",
-    summaryElevation: "Höjd",
-    summaryRideTime: "Beräknad körtid",
+    summaryRideTime: "Beräknad tid",
     summaryTrailSegments: "Ledsegment",
     summaryGpx: "GPX-export",
     gpxReady: "Redo",
     gpxNotReady: "Inte redo",
-    elevationUnavailable: "—",
     waypointsSummary: (count) => `${count} ${count === 1 ? "waypoint" : "waypoints"}`,
     searchNearby: "Använd min position",
     searchNearbyDescription: (radius) =>
@@ -617,7 +612,6 @@ function updateRouteBuilderSummary() {
   const durationSeconds = builtSegmentStats.reduce((total, segment) => total + segment.durationSeconds, 0);
 
   summaryDistance.textContent = distance > 0 ? formatDistance(distance) : "—";
-  summaryElevation.textContent = t("elevationUnavailable");
   summaryRideTime.textContent = durationSeconds > 0 ? formatDuration(durationSeconds) : "—";
   summaryTrailSegments.textContent = String(trailSegmentCount);
   summaryGpx.textContent = builtCoordinates.length >= 2 ? t("gpxReady") : t("gpxNotReady");
