@@ -18,6 +18,8 @@ from fastapi.templating import Jinja2Templates
 from shapely.geometry import LineString, Point
 from shapely.ops import substring, transform
 
+from app.routing import RouteBuildRequest, TrailRequest, fetch_hiking_trails, route_between_points
+
 
 DEFAULT_SEARCH_RADIUS_KM = 2.0
 DEFAULT_SEARCH_RADIUS_METERS = 2_000
@@ -152,6 +154,28 @@ async def nearby_services(payload: NearbyRequest) -> dict[str, Any]:
     except Exception as exc:
         logger.exception("Nearby services search failed")
         raise HTTPException(status_code=500, detail=f"Serverfel vid positionssökning: {type(exc).__name__}: {exc}") from exc
+
+
+@app.post("/api/route")
+async def build_route(payload: RouteBuildRequest) -> dict[str, Any]:
+    try:
+        return await route_between_points(payload)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Route build failed")
+        raise HTTPException(status_code=500, detail=f"Serverfel vid ruttbyggande: {type(exc).__name__}: {exc}") from exc
+
+
+@app.post("/api/trails")
+async def hiking_trails(payload: TrailRequest) -> dict[str, Any]:
+    try:
+        return await fetch_hiking_trails(payload, OVERPASS_URLS, OVERPASS_HEADERS)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Trail fetch failed")
+        raise HTTPException(status_code=500, detail=f"Serverfel vid ledhämtning: {type(exc).__name__}: {exc}") from exc
 
 
 async def analyze_gpx_content(

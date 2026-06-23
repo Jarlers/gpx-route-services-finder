@@ -19,6 +19,11 @@ const languageInput = document.querySelector("#language-select");
 const filterInputs = Array.from(document.querySelectorAll(".filters input"));
 const mapPanel = document.querySelector(".map-panel");
 const mapElement = document.querySelector("#map");
+const builderProfileInput = document.querySelector("#builder-profile");
+const builderStatus = document.querySelector("#builder-status");
+const builderSummary = document.querySelector("#builder-summary");
+const downloadGpxButton = document.querySelector("#download-gpx");
+const clearBuiltRouteButton = document.querySelector("#clear-built-route");
 
 const translations = {
   en: {
@@ -55,6 +60,8 @@ const translations = {
     layerStages: "Stage ends",
     layerStandard: "Standard map",
     layerLocation: "Your position",
+    layerBuiltRoute: "Planned route",
+    layerHikingTrails: "Hiking trails",
     lodging: "Lodging",
     lodgingNearStage: (count) => `Lodging/camping near stage end: ${count}`,
     mapLabel: "Map",
@@ -78,6 +85,27 @@ const translations = {
     placeFallback: "Place",
     routeHitSummary: (count, radius, routeLength) =>
       `${count} ${count === 1 ? "place" : "places"} found within ${radius} km in the current segment. The full route is ${routeLength}.`,
+    routeBuilderLabel: "Route builder",
+    routeBuilderTitle: "Route builder",
+    routeBuilderHelp:
+      "Click the map to add waypoints. The route follows roads for driving and a configured foot routing engine for hiking.",
+    routeBuilderInitial: "Click the map to start a new route.",
+    routingProfile: "Routing profile",
+    profileDriving: "Driving / road",
+    profileHiking: "Hiking / trails",
+    downloadGpx: "Download GPX",
+    clearRoute: "Clear route",
+    routeBuilding: "Routing segment...",
+    routeReady: (waypoints, distance) => `${waypoints} waypoints, planned route ${distance}.`,
+    routeCleared: "Route cleared. Click the map to start again.",
+    routeNeedsTwoPoints: "Add at least two routed waypoints before downloading GPX.",
+    routeDownloadReady: "GPX file downloaded.",
+    routeProfileChanged: "Routing profile changed. Existing planned route was cleared.",
+    routeFailed: "Routing failed.",
+    trailsUnavailable: "Could not load hiking trails for this map view.",
+    trailsUnavailableWarning: "Hiking trail overlay unavailable right now.",
+    trailsLoaded: (count) => `${count} hiking trail segments loaded in this map view.`,
+    waypointsSummary: (count) => `${count} ${count === 1 ? "waypoint" : "waypoints"}`,
     searchNearby: "Use my location",
     searchNearbyDescription: (radius) =>
       `Search for fuel, lodging, campgrounds, shelters and food within ${radius} km of your current GPS position.`,
@@ -137,6 +165,8 @@ const translations = {
     layerStages: "Etappslut",
     layerStandard: "Standardkarta",
     layerLocation: "Din position",
+    layerBuiltRoute: "Planerad rutt",
+    layerHikingTrails: "Vandringsleder",
     lodging: "Boende",
     lodgingNearStage: (count) => `Boende/camping nära etappslut: ${count}`,
     mapLabel: "Karta",
@@ -160,6 +190,27 @@ const translations = {
     placeFallback: "Plats",
     routeHitSummary: (count, radius, routeLength) =>
       `${count} platser hittades inom ${radius} km i aktuellt segment. Hela rutten är ${routeLength}.`,
+    routeBuilderLabel: "Ruttbyggare",
+    routeBuilderTitle: "Ruttbyggare",
+    routeBuilderHelp:
+      "Klicka i kartan för att lägga till waypoints. Rutten följer vägar för bil och en konfigurerad foot-routingmotor för vandring.",
+    routeBuilderInitial: "Klicka i kartan för att börja en ny rutt.",
+    routingProfile: "Routingprofil",
+    profileDriving: "Bil / väg",
+    profileHiking: "Vandring / leder",
+    downloadGpx: "Ladda ner GPX",
+    clearRoute: "Rensa rutt",
+    routeBuilding: "Beräknar ruttsegment...",
+    routeReady: (waypoints, distance) => `${waypoints} waypoints, planerad rutt ${distance}.`,
+    routeCleared: "Rutten rensad. Klicka i kartan för att börja igen.",
+    routeNeedsTwoPoints: "Lägg till minst två routade waypoints innan du laddar ner GPX.",
+    routeDownloadReady: "GPX-fil nedladdad.",
+    routeProfileChanged: "Routingprofilen ändrades. Befintlig planerad rutt rensades.",
+    routeFailed: "Routing misslyckades.",
+    trailsUnavailable: "Kunde inte ladda vandringsleder för kartvyn.",
+    trailsUnavailableWarning: "Led-overlay är inte tillgänglig just nu.",
+    trailsLoaded: (count) => `${count} ledsegment laddade i kartvyn.`,
+    waypointsSummary: (count) => `${count} ${count === 1 ? "waypoint" : "waypoints"}`,
     searchNearby: "Använd min position",
     searchNearbyDescription: (radius) =>
       `Sök efter bensin, boende, campingplatser, vindskydd och mat inom ${radius} km från din aktuella GPS-position.`,
@@ -206,16 +257,24 @@ const satelliteLayer = L.tileLayer(
 standardLayer.addTo(map);
 
 let routeLayer = null;
+let builtRouteLayer = null;
 let markerLayer = L.layerGroup().addTo(map);
 let stageLayer = L.layerGroup().addTo(map);
 let locationLayer = L.layerGroup().addTo(map);
+let waypointLayer = L.layerGroup().addTo(map);
+let trailLayer = L.layerGroup();
 let places = [];
 let stages = [];
+let builtWaypoints = [];
+let builtSegments = [];
+let builtCoordinates = [];
 let resizeFrame = null;
 let currentFile = null;
 let nextStartKm = null;
 let layerControl = null;
 let searchMode = "route";
+let isRoutingSegment = false;
+let trailLoadTimer = null;
 
 const markerStyles = {
   fuel: { color: "#c2410c", symbol: "⛽" },
@@ -245,6 +304,13 @@ if ("ResizeObserver" in window) {
 map.whenReady(() => scheduleMapResize({ repeat: true }));
 setTimeout(() => scheduleMapResize({ repeat: true }), 100);
 
+map.on("click", handleMapRouteClick);
+map.on("moveend", () => {
+  if (currentBuilderProfile() === "hiking") {
+    scheduleTrailLoad();
+  }
+});
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
@@ -271,6 +337,12 @@ filterInputs.forEach((input) => input.addEventListener("change", renderPlaces));
 
 nearbySearchButton.addEventListener("click", searchNearbyServices);
 nearbyRadiusInput.addEventListener("change", updateNearbyDescription);
+downloadGpxButton.addEventListener("click", downloadBuiltRouteGpx);
+clearBuiltRouteButton.addEventListener("click", () => clearBuiltRoute(t("routeCleared")));
+builderProfileInput.addEventListener("change", () => {
+  clearBuiltRoute(t("routeProfileChanged"));
+  updateTrailLayerVisibility();
+});
 
 languageInput?.addEventListener("change", () => {
   currentLanguage = languageInput.value;
@@ -278,6 +350,8 @@ languageInput?.addEventListener("change", () => {
 });
 
 applyLanguage();
+updateBuilderControls();
+updateTrailLayerVisibility();
 
 async function analyzeSegment(startKm) {
   const submitButton = form.querySelector("button");
@@ -353,6 +427,214 @@ async function searchNearbyServices() {
     setStatus(userFacingError(error) || t("nearbySearchFailed"), true);
   } finally {
     nearbySearchButton.disabled = false;
+  }
+}
+
+async function handleMapRouteClick(event) {
+  if (isRoutingSegment) {
+    return;
+  }
+
+  const waypoint = { lat: event.latlng.lat, lon: event.latlng.lng };
+  builtWaypoints.push(waypoint);
+  renderBuiltWaypoints();
+  updateBuilderControls();
+
+  if (builtWaypoints.length < 2) {
+    setBuilderStatus(t("routeBuilderInitial"));
+    return;
+  }
+
+  const previous = builtWaypoints[builtWaypoints.length - 2];
+  const latest = builtWaypoints[builtWaypoints.length - 1];
+
+  isRoutingSegment = true;
+  updateBuilderControls();
+  setBuilderStatus(t("routeBuilding"));
+
+  try {
+    const segment = await requestBuiltRouteSegment(previous, latest, currentBuilderProfile());
+    builtSegments.push(segment.coordinates);
+    builtCoordinates = RoutePlannerUtils.mergeRouteSegments(builtSegments);
+    renderBuiltRoute();
+    setBuilderStatus(t("routeReady", builtWaypoints.length, formatDistance(RoutePlannerUtils.routeDistanceMeters(builtCoordinates))));
+  } catch (error) {
+    builtWaypoints.pop();
+    renderBuiltWaypoints();
+    setBuilderStatus(`${t("routeFailed")} ${userFacingError(error)}`, true);
+  } finally {
+    isRoutingSegment = false;
+    updateBuilderControls();
+  }
+}
+
+async function requestBuiltRouteSegment(start, end, profile) {
+  const response = await fetch("/api/route", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      profile,
+      points: [start, end],
+    }),
+  });
+
+  return responsePayload(response);
+}
+
+function renderBuiltWaypoints() {
+  waypointLayer.clearLayers();
+  builtWaypoints.forEach((point, index) => {
+    L.marker([point.lat, point.lon], {
+      icon: waypointIcon(index + 1),
+      title: `Waypoint ${index + 1}`,
+    })
+      .bindPopup(`<p class="popup-title">Waypoint ${index + 1}</p><p class="popup-meta">${escapeHtml(compactCoordinate(point.lat, point.lon))}</p>`)
+      .addTo(waypointLayer);
+  });
+}
+
+function renderBuiltRoute() {
+  if (builtRouteLayer) {
+    builtRouteLayer.remove();
+    builtRouteLayer = null;
+  }
+  if (builtCoordinates.length < 2) {
+    return;
+  }
+
+  builtRouteLayer = L.polyline(builtCoordinates, {
+    color: currentBuilderProfile() === "hiking" ? "#7c3aed" : "#111827",
+    weight: 5,
+    opacity: 0.9,
+  }).addTo(map);
+  builtRouteLayer.bringToFront();
+}
+
+function clearBuiltRoute(message) {
+  builtWaypoints = [];
+  builtSegments = [];
+  builtCoordinates = [];
+  waypointLayer.clearLayers();
+  if (builtRouteLayer) {
+    builtRouteLayer.remove();
+    builtRouteLayer = null;
+  }
+  setBuilderStatus(message || t("routeBuilderInitial"));
+  updateBuilderControls();
+}
+
+function downloadBuiltRouteGpx() {
+  try {
+    if (builtCoordinates.length < 2) {
+      setBuilderStatus(t("routeNeedsTwoPoints"), true);
+      return;
+    }
+    const gpx = RoutePlannerUtils.buildGpxDocument(builtCoordinates, {
+      name: currentBuilderProfile() === "hiking" ? "Planned hiking route" : "Planned road route",
+    });
+    const blob = new Blob([gpx], { type: "application/gpx+xml" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `planned-${currentBuilderProfile()}-route.gpx`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
+    setBuilderStatus(t("routeDownloadReady"));
+  } catch (error) {
+    setBuilderStatus(userFacingError(error), true);
+  }
+}
+
+function updateBuilderControls() {
+  const hasWaypoints = builtWaypoints.length > 0;
+  downloadGpxButton.disabled = builtCoordinates.length < 2 || isRoutingSegment;
+  clearBuiltRouteButton.disabled = !hasWaypoints || isRoutingSegment;
+  builderProfileInput.disabled = isRoutingSegment;
+  builderSummary.textContent = t("waypointsSummary", builtWaypoints.length);
+}
+
+function setBuilderStatus(message, isError = false) {
+  builderStatus.textContent = message;
+  builderStatus.classList.toggle("error", isError);
+}
+
+function currentBuilderProfile() {
+  return builderProfileInput.value || "driving";
+}
+
+function waypointIcon(number) {
+  return L.divIcon({
+    className: "waypoint-marker",
+    html: `<span>${number}</span>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+    popupAnchor: [0, -16],
+  });
+}
+
+function updateTrailLayerVisibility() {
+  if (currentBuilderProfile() === "hiking") {
+    if (!map.hasLayer(trailLayer)) {
+      trailLayer.addTo(map);
+    }
+    scheduleTrailLoad();
+  } else if (map.hasLayer(trailLayer)) {
+    map.removeLayer(trailLayer);
+  }
+  renderLayerControl();
+}
+
+function scheduleTrailLoad() {
+  if (trailLoadTimer !== null) {
+    clearTimeout(trailLoadTimer);
+  }
+  trailLoadTimer = setTimeout(loadVisibleHikingTrails, 350);
+}
+
+async function loadVisibleHikingTrails() {
+  if (currentBuilderProfile() !== "hiking") {
+    return;
+  }
+  const bounds = map.getBounds();
+  try {
+    const response = await fetch("/api/trails", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        south: bounds.getSouth(),
+        west: bounds.getWest(),
+        north: bounds.getNorth(),
+        east: bounds.getEast(),
+      }),
+    });
+    const payload = await responsePayload(response);
+    renderHikingTrails(payload.trails || []);
+    if (payload.status === "unavailable") {
+      setBuilderStatus(`${t("trailsUnavailableWarning")} ${payload.warning || ""}`.trim(), true);
+    } else {
+      setBuilderStatus(t("trailsLoaded", (payload.trails || []).length));
+    }
+  } catch (error) {
+    setBuilderStatus(`${t("trailsUnavailable")} ${userFacingError(error)}`, true);
+  }
+}
+
+function renderHikingTrails(trails) {
+  trailLayer.clearLayers();
+  for (const trail of trails) {
+    L.polyline(trail.coordinates, {
+      color: "#7c3aed",
+      weight: 3,
+      opacity: 0.55,
+      dashArray: "6 6",
+    })
+      .bindPopup(`<p class="popup-title">${escapeHtml(trail.name)}</p>`)
+      .addTo(trailLayer);
   }
 }
 
@@ -765,6 +1047,8 @@ function renderLayerControl() {
         [t("layerPoi")]: markerLayer,
         [t("layerStages")]: stageLayer,
         [t("layerLocation")]: locationLayer,
+        [t("layerBuiltRoute")]: waypointLayer,
+        [t("layerHikingTrails")]: trailLayer,
       },
       {
         position: "topright",
@@ -875,6 +1159,16 @@ function localizeServerError(message) {
       "All Overpass servers are temporarily busy. Try again later or use a shorter route.",
     "Kunde inte ansluta till någon Overpass-server. Kontrollera internetanslutningen och försök igen.":
       "Could not connect to any Overpass server. Check the internet connection and try again.",
+    "Minst två punkter krävs för routing.": "At least two points are required for routing.",
+    "Ogiltig koordinat.": "Invalid coordinate.",
+    "Okänd routingprofil.": "Unknown routing profile.",
+    "Routingmotorn hann inte svara.": "The routing engine timed out.",
+    "Kunde inte ansluta till routingmotorn.": "Could not connect to the routing engine.",
+    "Routingmotorn returnerade ingen användbar linje.": "The routing engine did not return a usable line.",
+    "Zooma in för att visa vandringsleder.": "Zoom in to show hiking trails.",
+    "Kunde inte hämta vandringsleder från Overpass API.": "Could not fetch hiking trails from Overpass API.",
+    "Vandringsrouting kräver OSRM_HIKING_BASE_URL med en foot/hiking-profil. Led-overlay kan fortfarande visas, men automatisk routing längs led kräver en konfigurerad hikingmotor.":
+      "Hiking routing requires OSRM_HIKING_BASE_URL with a foot/hiking profile. Trail overlay can still be shown, but automatic routing along trails requires a configured hiking engine.",
   };
 
   if (serverErrors[message]) {

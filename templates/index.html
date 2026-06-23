@@ -12,7 +12,7 @@
     <link rel="icon" href="/static/icons/icon-192.png" sizes="192x192" />
     <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="/static/styles.css?v=camping-2" />
+    <link rel="stylesheet" href="/static/styles.css?v=route-builder-1" />
   </head>
   <body>
     <main class="app-shell">
@@ -59,6 +59,27 @@
         </form>
 
         <div id="status" class="status" role="status" data-i18n="initialStatus">Choose a GPX file to begin.</div>
+
+        <section class="route-builder-panel" aria-label="Route builder" data-i18n-attr="aria-label:routeBuilderLabel">
+          <div class="panel-heading">
+            <h2 data-i18n="routeBuilderTitle">Route builder</h2>
+            <span id="builder-summary">0 waypoints</span>
+          </div>
+          <p data-i18n="routeBuilderHelp">Click the map to add waypoints. The route follows roads for driving and a configured foot routing engine for hiking.</p>
+          <label for="builder-profile">
+            <span data-i18n="routingProfile">Routing profile</span>
+            <select id="builder-profile" name="builderProfile">
+              <option value="driving" selected data-i18n="profileDriving">Driving / road</option>
+              <option value="hiking" data-i18n="profileHiking">Hiking / trails</option>
+            </select>
+          </label>
+          <div class="builder-actions">
+            <button id="download-gpx" class="secondary-button" type="button" disabled data-i18n="downloadGpx">Download GPX</button>
+            <button id="clear-built-route" class="secondary-button" type="button" disabled data-i18n="clearRoute">Clear route</button>
+          </div>
+          <div id="builder-status" class="builder-status" role="status" data-i18n="routeBuilderInitial">Click the map to start a new route.</div>
+        </section>
+
         <div id="segment-status" class="segment-status" hidden></div>
         <p id="segment-help" class="segment-help" hidden data-i18n="segmentHelp">Route searches are limited to 350 km at a time because longer routes can contain too much map data. Use Search onward to analyze the next segment.</p>
         <button id="next-segment" class="secondary-button" type="button" hidden data-i18n="searchNextSegment">Search next segment</button>
@@ -114,6 +135,7 @@
     </main>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="/static/app.js?v=camping-2"></script>
+    <script src="/static/route-utils.js?v=route-builder-1"></script>
+    <script src="/static/app.js?v=route-builder-1"></script>
   </body>
 </html>
