@@ -42,7 +42,7 @@ Appen använder Overpass API för att hämta OpenStreetMap-objekt:
 - `route=hiking`
 - `highway=path|footway|track` med `sac_scale` eller `trail_visibility`
 
-Ruttbyggaren använder OSRM via server-API:t `/api/route`. Som standard används publik OSRM för bil/väg. Vandringsrouting är förberedd via `OSRM_HIKING_BASE_URL` och kräver en OSRM-instans med foot/hiking-profil för att rutten ska kunna följa leder automatiskt. Om sådan motor saknas visas ett tydligt fel i UI:t.
+Ruttbyggaren använder server-API:t `/api/route`. Som standard används publik OSRM för bil/väg. Vandringsrouting använder `OSRM_HIKING_BASE_URL` om en egen foot/hiking-profil finns konfigurerad. Om den saknas använder appen en lokal OSM/Overpass-baserad fallback som snappar punkter till närliggande leder/stigar och beräknar kortaste väg i det lokala lednätet.
 
 ## Projektstruktur
 

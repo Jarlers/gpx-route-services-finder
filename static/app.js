@@ -508,7 +508,8 @@ async function handleMapRouteClick(event) {
     });
     builtCoordinates = RoutePlannerUtils.mergeRouteSegments(builtSegments);
     renderBuiltRoute();
-    setBuilderStatus(t("routeReady", builtWaypoints.length, formatDistance(RoutePlannerUtils.routeDistanceMeters(builtCoordinates))));
+    const readyMessage = t("routeReady", builtWaypoints.length, formatDistance(RoutePlannerUtils.routeDistanceMeters(builtCoordinates)));
+    setBuilderStatus(segment.warning ? `${readyMessage} ${segment.warning}` : readyMessage, Boolean(segment.warning));
   } catch (error) {
     builtWaypoints.pop();
     renderBuiltWaypoints();
@@ -1299,8 +1300,16 @@ function localizeServerError(message) {
     "Routingmotorn returnerade ingen användbar linje.": "The routing engine did not return a usable line.",
     "Zooma in för att visa vandringsleder.": "Zoom in to show hiking trails.",
     "Kunde inte hämta vandringsleder från Overpass API.": "Could not fetch hiking trails from Overpass API.",
-    "Vandringsrouting kräver OSRM_HIKING_BASE_URL med en foot/hiking-profil. Led-overlay kan fortfarande visas, men automatisk routing längs led kräver en konfigurerad hikingmotor.":
-      "Hiking routing requires OSRM_HIKING_BASE_URL with a foot/hiking profile. Trail overlay can still be shown, but automatic routing along trails requires a configured hiking engine.",
+    "Hikingsegmentet är för långt för lokal led-routing. Lägg fler waypoints närmare varandra.":
+      "The hiking segment is too long for local trail routing. Add more waypoints closer together.",
+    "Ingen routbar vandringsled hittades nära punkterna.":
+      "No routable hiking trail was found near the points.",
+    "Kunde inte snappa punkterna till en vandringsled. Klicka närmare en markerad led.":
+      "Could not snap the points to a hiking trail. Click closer to a marked trail.",
+    "Ingen sammanhängande vandringsled hittades mellan punkterna. Lägg en mellanpunkt längs leden.":
+      "No connected hiking trail was found between the points. Add an intermediate point along the trail.",
+    "Overpass API är inte konfigurerat för hiking-routing.":
+      "Overpass API is not configured for hiking routing.",
   };
 
   if (serverErrors[message]) {

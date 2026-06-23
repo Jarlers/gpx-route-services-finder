@@ -159,7 +159,7 @@ async def nearby_services(payload: NearbyRequest) -> dict[str, Any]:
 @app.post("/api/route")
 async def build_route(payload: RouteBuildRequest) -> dict[str, Any]:
     try:
-        return await route_between_points(payload)
+        return await route_between_points(payload, OVERPASS_URLS, OVERPASS_HEADERS)
     except HTTPException:
         raise
     except Exception as exc:
