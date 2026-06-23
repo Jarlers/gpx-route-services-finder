@@ -19,6 +19,7 @@ TRAIL_CACHE_TTL_SECONDS = 900
 TRAIL_MAX_BBOX_AREA_DEGREES = 0.5
 HIKING_ROUTE_MAX_BBOX_AREA_DEGREES = 0.75
 HIKING_ROUTE_SNAP_LIMIT_METERS = 1_500
+HIKING_ROUTE_FAST_TIMEOUT_SECONDS = 12
 TRAIL_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 TRAIL_ERROR_CACHE: dict[str, tuple[float, str]] = {}
 
@@ -133,7 +134,7 @@ async def route_hiking_with_overpass(
     overpass_urls: list[str],
     headers: dict[str, str],
 ) -> dict[str, Any]:
-    bbox = route_points_bbox(payload.points, padding_degrees=0.025)
+    bbox = route_points_bbox(payload.points, padding_degrees=0.01)
     if bbox_area(bbox) > HIKING_ROUTE_MAX_BBOX_AREA_DEGREES:
         raise HTTPException(
             status_code=400,
@@ -199,19 +200,26 @@ async def fetch_hiking_route_elements(
     if not overpass_urls:
         raise HTTPException(status_code=502, detail="Overpass API är inte konfigurerat för hiking-routing.")
 
-    query = build_hiking_route_query(bbox)
+    queries = [
+        build_hiking_route_query(bbox),
+        build_hiking_path_query(bbox),
+    ]
     errors: list[str] = []
-    async with httpx.AsyncClient(timeout=30, headers=headers) as client:
-        for url in overpass_urls:
-            try:
-                response = await client.post(url, data={"data": query})
-                if response.status_code >= 400:
-                    errors.append(f"{url} HTTP {response.status_code}: {response.text[:160]}")
+    async with httpx.AsyncClient(timeout=HIKING_ROUTE_FAST_TIMEOUT_SECONDS, headers=headers) as client:
+        for query in queries:
+            for url in overpass_urls:
+                try:
+                    response = await client.post(url, data={"data": query})
+                    if response.status_code >= 400:
+                        errors.append(f"{url} HTTP {response.status_code}: {response.text[:160]}")
+                        continue
+                    elements = response.json().get("elements", [])
+                    if elements:
+                        return elements
+                    errors.append(f"{url}: no route elements")
+                except (httpx.HTTPError, ValueError) as exc:
+                    errors.append(f"{url}: {type(exc).__name__}: {exc}")
                     continue
-                return response.json().get("elements", [])
-            except (httpx.HTTPError, ValueError) as exc:
-                errors.append(f"{url}: {type(exc).__name__}: {exc}")
-                continue
 
     detail = "Kunde inte hämta lednät för hiking-routing från Overpass API."
     if errors:
@@ -222,12 +230,23 @@ async def fetch_hiking_route_elements(
 def build_hiking_route_query(bbox: dict[str, float]) -> str:
     area = f"({bbox['south']:.6f},{bbox['west']:.6f},{bbox['north']:.6f},{bbox['east']:.6f})"
     return f"""
-    [out:json][timeout:25];
+    [out:json][timeout:10];
     (
       way["route"~"^(hiking|foot)$"]{area};
       way["osmc:symbol"]{area};
       way["sac_scale"]{area};
       way["trail_visibility"]{area};
+    );
+    out tags geom;
+    """
+
+
+def build_hiking_path_query(bbox: dict[str, float]) -> str:
+    area = f"({bbox['south']:.6f},{bbox['west']:.6f},{bbox['north']:.6f},{bbox['east']:.6f})"
+    return f"""
+    [out:json][timeout:10];
+    (
+      way["highway"~"^(path|footway|track|steps|bridleway|pedestrian)$"]{area};
     );
     out tags geom;
     """
