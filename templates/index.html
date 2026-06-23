@@ -66,6 +66,10 @@
             <span id="builder-summary">0 waypoints</span>
           </div>
           <p data-i18n="routeBuilderHelp">Click the map to add waypoints. The route follows roads for driving and a configured foot routing engine for hiking.</p>
+          <div id="trail-sync-indicator" class="trail-sync-indicator" data-state="idle" aria-live="polite">
+            <span class="sync-dot" aria-hidden="true"></span>
+            <span id="trail-sync-text" data-i18n="trailSyncIdle">Trail sync idle</span>
+          </div>
           <label for="builder-profile">
             <span data-i18n="routingProfile">Routing profile</span>
             <select id="builder-profile" name="builderProfile">
@@ -73,6 +77,28 @@
               <option value="hiking" data-i18n="profileHiking">Hiking / trails</option>
             </select>
           </label>
+          <div class="route-summary-grid" aria-label="Route summary" data-i18n-attr="aria-label:routeSummaryLabel">
+            <div class="route-summary-item">
+              <span data-i18n="summaryDistance">Distance</span>
+              <strong id="summary-distance">—</strong>
+            </div>
+            <div class="route-summary-item">
+              <span data-i18n="summaryElevation">Elevation</span>
+              <strong id="summary-elevation">—</strong>
+            </div>
+            <div class="route-summary-item">
+              <span data-i18n="summaryRideTime">Est. ride time</span>
+              <strong id="summary-ride-time">—</strong>
+            </div>
+            <div class="route-summary-item">
+              <span data-i18n="summaryTrailSegments">Trail segments</span>
+              <strong id="summary-trail-segments">0</strong>
+            </div>
+            <div class="route-summary-item route-summary-item-wide">
+              <span data-i18n="summaryGpx">GPX export</span>
+              <strong id="summary-gpx">Not ready</strong>
+            </div>
+          </div>
           <div class="builder-actions">
             <button id="download-gpx" class="secondary-button" type="button" disabled data-i18n="downloadGpx">Download GPX</button>
             <button id="clear-built-route" class="secondary-button" type="button" disabled data-i18n="clearRoute">Clear route</button>

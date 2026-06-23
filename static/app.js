@@ -24,6 +24,15 @@ const builderStatus = document.querySelector("#builder-status");
 const builderSummary = document.querySelector("#builder-summary");
 const downloadGpxButton = document.querySelector("#download-gpx");
 const clearBuiltRouteButton = document.querySelector("#clear-built-route");
+const trailSyncIndicator = document.querySelector("#trail-sync-indicator");
+const trailSyncText = document.querySelector("#trail-sync-text");
+const summaryDistance = document.querySelector("#summary-distance");
+const summaryElevation = document.querySelector("#summary-elevation");
+const summaryRideTime = document.querySelector("#summary-ride-time");
+const summaryTrailSegments = document.querySelector("#summary-trail-segments");
+const summaryGpx = document.querySelector("#summary-gpx");
+const TRAIL_MIN_ZOOM = 11;
+const TRAIL_MAX_VIEW_AREA = 0.5;
 
 const translations = {
   en: {
@@ -88,8 +97,9 @@ const translations = {
     routeBuilderLabel: "Route builder",
     routeBuilderTitle: "Route builder",
     routeBuilderHelp:
-      "Click the map to add waypoints. The route follows roads for driving and a configured foot routing engine for hiking.",
+      "Click the map to add waypoints. Trail data syncs automatically when the map is zoomed or moved.",
     routeBuilderInitial: "Click the map to start a new route.",
+    routeSummaryLabel: "Route summary",
     routingProfile: "Routing profile",
     profileDriving: "Driving / road",
     profileHiking: "Hiking / trails",
@@ -105,6 +115,21 @@ const translations = {
     trailsUnavailable: "Could not load hiking trails for this map view.",
     trailsUnavailableWarning: "Hiking trail overlay unavailable right now.",
     trailsLoaded: (count) => `${count} hiking trail segments loaded in this map view.`,
+    trailsZoomIn: "Zoom in to load hiking trails.",
+    trailSyncIdle: "Trail sync idle",
+    trailSyncing: "Syncing trail network for current map scale...",
+    trailSyncUpdating: "Live trails updating",
+    trailSynced: "Trail data synced",
+    trailSyncSkipped: "Zoom in to sync trails",
+    trailSyncError: "Trail sync delayed",
+    summaryDistance: "Distance",
+    summaryElevation: "Elevation",
+    summaryRideTime: "Est. ride time",
+    summaryTrailSegments: "Trail segments",
+    summaryGpx: "GPX export",
+    gpxReady: "Ready",
+    gpxNotReady: "Not ready",
+    elevationUnavailable: "—",
     waypointsSummary: (count) => `${count} ${count === 1 ? "waypoint" : "waypoints"}`,
     searchNearby: "Use my location",
     searchNearbyDescription: (radius) =>
@@ -193,8 +218,9 @@ const translations = {
     routeBuilderLabel: "Ruttbyggare",
     routeBuilderTitle: "Ruttbyggare",
     routeBuilderHelp:
-      "Klicka i kartan för att lägga till waypoints. Rutten följer vägar för bil och en konfigurerad foot-routingmotor för vandring.",
+      "Klicka i kartan för att lägga till waypoints. Leddata synkas automatiskt när kartan zoomas eller flyttas.",
     routeBuilderInitial: "Klicka i kartan för att börja en ny rutt.",
+    routeSummaryLabel: "Ruttsammanfattning",
     routingProfile: "Routingprofil",
     profileDriving: "Bil / väg",
     profileHiking: "Vandring / leder",
@@ -210,6 +236,21 @@ const translations = {
     trailsUnavailable: "Kunde inte ladda vandringsleder för kartvyn.",
     trailsUnavailableWarning: "Led-overlay är inte tillgänglig just nu.",
     trailsLoaded: (count) => `${count} ledsegment laddade i kartvyn.`,
+    trailsZoomIn: "Zooma in för att ladda vandringsleder.",
+    trailSyncIdle: "Led-synk väntar",
+    trailSyncing: "Synkar lednät för aktuell kartskala...",
+    trailSyncUpdating: "Live-leder uppdateras",
+    trailSynced: "Leddata synkad",
+    trailSyncSkipped: "Zooma in för att synka leder",
+    trailSyncError: "Led-synk fördröjd",
+    summaryDistance: "Distans",
+    summaryElevation: "Höjd",
+    summaryRideTime: "Beräknad körtid",
+    summaryTrailSegments: "Ledsegment",
+    summaryGpx: "GPX-export",
+    gpxReady: "Redo",
+    gpxNotReady: "Inte redo",
+    elevationUnavailable: "—",
     waypointsSummary: (count) => `${count} ${count === 1 ? "waypoint" : "waypoints"}`,
     searchNearby: "Använd min position",
     searchNearbyDescription: (radius) =>
@@ -268,6 +309,8 @@ let stages = [];
 let builtWaypoints = [];
 let builtSegments = [];
 let builtCoordinates = [];
+let builtSegmentStats = [];
+let trailSegmentCount = 0;
 let resizeFrame = null;
 let currentFile = null;
 let nextStartKm = null;
@@ -275,6 +318,8 @@ let layerControl = null;
 let searchMode = "route";
 let isRoutingSegment = false;
 let trailLoadTimer = null;
+let trailLoadRequestId = 0;
+let currentTrailSyncState = "idle";
 
 const markerStyles = {
   fuel: { color: "#c2410c", symbol: "⛽" },
@@ -301,14 +346,15 @@ if ("ResizeObserver" in window) {
   mapResizeObserver.observe(mapElement);
 }
 
-map.whenReady(() => scheduleMapResize({ repeat: true }));
+map.whenReady(() => {
+  scheduleMapResize({ repeat: true });
+  scheduleTrailLoad({ background: true });
+});
 setTimeout(() => scheduleMapResize({ repeat: true }), 100);
 
 map.on("click", handleMapRouteClick);
 map.on("moveend", () => {
-  if (currentBuilderProfile() === "hiking") {
-    scheduleTrailLoad();
-  }
+  scheduleTrailLoad({ background: currentBuilderProfile() !== "hiking" });
 });
 
 form.addEventListener("submit", async (event) => {
@@ -351,6 +397,7 @@ languageInput?.addEventListener("change", () => {
 
 applyLanguage();
 updateBuilderControls();
+setTrailSyncState("idle", t("trailSyncIdle"));
 updateTrailLayerVisibility();
 
 async function analyzeSegment(startKm) {
@@ -455,6 +502,10 @@ async function handleMapRouteClick(event) {
   try {
     const segment = await requestBuiltRouteSegment(previous, latest, currentBuilderProfile());
     builtSegments.push(segment.coordinates);
+    builtSegmentStats.push({
+      distanceMeters: Number(segment.distanceMeters) || 0,
+      durationSeconds: Number(segment.durationSeconds) || 0,
+    });
     builtCoordinates = RoutePlannerUtils.mergeRouteSegments(builtSegments);
     renderBuiltRoute();
     setBuilderStatus(t("routeReady", builtWaypoints.length, formatDistance(RoutePlannerUtils.routeDistanceMeters(builtCoordinates))));
@@ -516,6 +567,7 @@ function clearBuiltRoute(message) {
   builtWaypoints = [];
   builtSegments = [];
   builtCoordinates = [];
+  builtSegmentStats = [];
   waypointLayer.clearLayers();
   if (builtRouteLayer) {
     builtRouteLayer.remove();
@@ -554,11 +606,41 @@ function updateBuilderControls() {
   clearBuiltRouteButton.disabled = !hasWaypoints || isRoutingSegment;
   builderProfileInput.disabled = isRoutingSegment;
   builderSummary.textContent = t("waypointsSummary", builtWaypoints.length);
+  updateRouteBuilderSummary();
+}
+
+function updateRouteBuilderSummary() {
+  const routedDistance = builtSegmentStats.reduce((total, segment) => total + segment.distanceMeters, 0);
+  const fallbackDistance = builtCoordinates.length >= 2 ? RoutePlannerUtils.routeDistanceMeters(builtCoordinates) : 0;
+  const distance = routedDistance || fallbackDistance;
+  const durationSeconds = builtSegmentStats.reduce((total, segment) => total + segment.durationSeconds, 0);
+
+  summaryDistance.textContent = distance > 0 ? formatDistance(distance) : "—";
+  summaryElevation.textContent = t("elevationUnavailable");
+  summaryRideTime.textContent = durationSeconds > 0 ? formatDuration(durationSeconds) : "—";
+  summaryTrailSegments.textContent = String(trailSegmentCount);
+  summaryGpx.textContent = builtCoordinates.length >= 2 ? t("gpxReady") : t("gpxNotReady");
 }
 
 function setBuilderStatus(message, isError = false) {
   builderStatus.textContent = message;
   builderStatus.classList.toggle("error", isError);
+}
+
+function setTrailSyncState(state, message) {
+  currentTrailSyncState = state;
+  trailSyncIndicator.dataset.state = state;
+  trailSyncText.textContent = message || trailSyncMessageForState(state);
+}
+
+function trailSyncMessageForState(state) {
+  return {
+    idle: t("trailSyncIdle"),
+    syncing: t("trailSyncing"),
+    synced: t("trailSynced"),
+    skipped: t("trailSyncSkipped"),
+    error: t("trailSyncError"),
+  }[state] || t("trailSyncIdle");
 }
 
 function currentBuilderProfile() {
@@ -587,18 +669,29 @@ function updateTrailLayerVisibility() {
   renderLayerControl();
 }
 
-function scheduleTrailLoad() {
+function scheduleTrailLoad(options = {}) {
   if (trailLoadTimer !== null) {
     clearTimeout(trailLoadTimer);
   }
-  trailLoadTimer = setTimeout(loadVisibleHikingTrails, 350);
+  trailLoadTimer = setTimeout(() => loadVisibleHikingTrails(options), options.background ? 900 : 350);
 }
 
-async function loadVisibleHikingTrails() {
-  if (currentBuilderProfile() !== "hiking") {
+async function loadVisibleHikingTrails(options = {}) {
+  const background = Boolean(options.background);
+  if (currentBuilderProfile() !== "hiking" && !background) {
     return;
   }
   const bounds = map.getBounds();
+  if (!shouldLoadTrailsForBounds(bounds)) {
+    setTrailSyncState("skipped", t("trailSyncSkipped"));
+    if (!background && currentBuilderProfile() === "hiking") {
+      setBuilderStatus(t("trailsZoomIn"));
+    }
+    return;
+  }
+
+  const requestId = ++trailLoadRequestId;
+  setTrailSyncState("syncing", background ? t("trailSyncUpdating") : t("trailSyncing"));
   try {
     const response = await fetch("/api/trails", {
       method: "POST",
@@ -613,19 +706,46 @@ async function loadVisibleHikingTrails() {
       }),
     });
     const payload = await responsePayload(response);
-    renderHikingTrails(payload.trails || []);
-    if (payload.status === "unavailable") {
-      setBuilderStatus(`${t("trailsUnavailableWarning")} ${payload.warning || ""}`.trim(), true);
+    if (requestId !== trailLoadRequestId) {
+      return;
+    }
+    if (payload.status !== "unavailable") {
+      renderHikingTrails(payload.trails || []);
+    }
+    if (background && currentBuilderProfile() !== "hiking") {
+      setTrailSyncState(payload.status === "unavailable" ? "error" : "synced", payload.status === "unavailable" ? t("trailSyncError") : t("trailSynced"));
+      return;
+    }
+    if (payload.status === "skipped") {
+      setTrailSyncState("skipped", t("trailSyncSkipped"));
+      setBuilderStatus(t("trailsZoomIn"));
+    } else if (payload.status === "unavailable") {
+      setTrailSyncState("error", t("trailSyncError"));
+      setBuilderStatus(`${t("trailsUnavailableWarning")} ${payload.warning || ""}`.trim());
     } else {
+      setTrailSyncState("synced", t("trailSynced"));
       setBuilderStatus(t("trailsLoaded", (payload.trails || []).length));
     }
   } catch (error) {
-    setBuilderStatus(`${t("trailsUnavailable")} ${userFacingError(error)}`, true);
+    if (requestId !== trailLoadRequestId) {
+      return;
+    }
+    setTrailSyncState("error", t("trailSyncError"));
+    if (!background) {
+      setBuilderStatus(`${t("trailsUnavailable")} ${userFacingError(error)}`, true);
+    }
   }
+}
+
+function shouldLoadTrailsForBounds(bounds) {
+  const area = Math.abs(bounds.getNorth() - bounds.getSouth()) * Math.abs(bounds.getEast() - bounds.getWest());
+  return map.getZoom() >= TRAIL_MIN_ZOOM && area <= TRAIL_MAX_VIEW_AREA;
 }
 
 function renderHikingTrails(trails) {
   trailLayer.clearLayers();
+  trailSegmentCount = trails.length;
+  updateRouteBuilderSummary();
   for (const trail of trails) {
     L.polyline(trail.coordinates, {
       color: "#7c3aed",
@@ -1021,6 +1141,8 @@ function applyLanguage() {
   renderLayerControl();
   updateNearbyDescription();
   updateResultTitle();
+  updateRouteBuilderSummary();
+  setTrailSyncState(currentTrailSyncState);
   renderPlaces();
   renderStages();
   if (nextStartKm !== null) {
@@ -1092,6 +1214,16 @@ function formatDistance(meters) {
     return `${meters} m`;
   }
   return `${(meters / 1000).toFixed(1)} km`;
+}
+
+function formatDuration(seconds) {
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (hours === 0) {
+    return `${remainingMinutes} min`;
+  }
+  return `${hours} h ${remainingMinutes.toString().padStart(2, "0")} min`;
 }
 
 function safeGpxFilename(file) {

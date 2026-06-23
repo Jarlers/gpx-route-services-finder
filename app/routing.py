@@ -15,6 +15,7 @@ OSRM_DRIVING_BASE_URL = os.getenv("OSRM_DRIVING_BASE_URL", "http://router.projec
 OSRM_HIKING_BASE_URL = os.getenv("OSRM_HIKING_BASE_URL")
 OSRM_TIMEOUT_SECONDS = 30
 TRAIL_CACHE_TTL_SECONDS = 900
+TRAIL_MAX_BBOX_AREA_DEGREES = 0.5
 TRAIL_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 TRAIL_ERROR_CACHE: dict[str, tuple[float, str]] = {}
 
@@ -122,6 +123,16 @@ def osrm_error_detail(response: httpx.Response, requested_profile: str) -> str:
 
 async def fetch_hiking_trails(payload: TrailRequest, overpass_urls: list[str], headers: dict[str, str]) -> dict[str, Any]:
     bbox = normalize_bbox(payload)
+    area = bbox_area(bbox)
+    if area > TRAIL_MAX_BBOX_AREA_DEGREES:
+        return {
+            "trails": [],
+            "source": "OpenStreetMap Overpass",
+            "cached": False,
+            "status": "skipped",
+            "warning": "Zooma in för att visa vandringsleder.",
+        }
+
     cache_key = trail_cache_key(bbox)
     cached = TRAIL_CACHE.get(cache_key)
     now = time.monotonic()
@@ -180,10 +191,6 @@ def normalize_bbox(payload: TrailRequest) -> dict[str, float]:
     if south == north or west == east:
         raise HTTPException(status_code=400, detail="Ogiltigt kartutsnitt.")
 
-    area = abs(north - south) * abs(east - west)
-    if area > 2.5:
-        raise HTTPException(status_code=400, detail="Zooma in för att visa vandringsleder.")
-
     return {"south": south, "west": west, "north": north, "east": east}
 
 
@@ -193,11 +200,10 @@ def build_trail_query(bbox: dict[str, float]) -> str:
     [out:json][timeout:25];
     (
       relation["route"~"^(hiking|foot)$"]{area};
-      way(r);
-      way["highway"~"^(path|footway|track|steps|bridleway)$"]["osmc:symbol"]{area};
-      way["highway"~"^(path|footway|track)$"]["sac_scale"]{area};
-      way["highway"~"^(path|footway|track)$"]["trail_visibility"]{area};
-      way["highway"~"^(path|footway|track)$"]["name"]{area};
+      way["route"~"^(hiking|foot)$"]{area};
+      way["osmc:symbol"]{area};
+      way["sac_scale"]{area};
+      way["trail_visibility"]{area};
     );
     out tags geom;
     """
@@ -229,6 +235,10 @@ def parse_trail_elements(elements: list[dict[str, Any]]) -> list[dict[str, Any]]
                 }
             )
     return trails[:250]
+
+
+def bbox_area(bbox: dict[str, float]) -> float:
+    return abs(bbox["north"] - bbox["south"]) * abs(bbox["east"] - bbox["west"])
 
 
 def trail_geometries(element: dict[str, Any]) -> list[list[list[float]]]:
